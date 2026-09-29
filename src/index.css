@@ -1,0 +1,118 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    background-color: #4987A4;
+    background-image: linear-gradient(180deg, #4987A4 0%, #a4c8d8 50%, #ffffff 100%);
+    background-attachment: fixed;
+    color: #0f172a;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    overflow-x: hidden;
+  }
+}
+
+/* Light Theme Default Backdrop - #4987A4 fading into White */
+.ocean-green-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -20;
+  pointer-events: none;
+  background: linear-gradient(180deg, #4987A4 0%, #9bc2d4 48%, #ffffff 100%);
+}
+
+/* Dark Theme Option 1: Ocean Green */
+.dark-ocean-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -20;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 15%, #0f5c54 0%, #06332e 55%, #031c19 100%);
+}
+
+/* Dark Theme Option 2: Black */
+.dark-black-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -20;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 15%, #171717 0%, #090909 55%, #000000 100%);
+}
+
+/* Dark Theme Option 3: Baby Pink */
+.dark-babypink-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -20;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 15%, #592238 0%, #361321 55%, #1f0a13 100%);
+}
+
+/* Crisp Clean Panels */
+.glass-ultra {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+}
+
+.glass-ultra-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.04);
+}
+
+.glass-ultra-pill {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+/* 3D Map Projection */
+.map-perspective-plane {
+  position: absolute;
+  width: 155%;
+  height: 155%;
+  left: -27%;
+  top: -8%;
+  transform: perspective(520px) rotateX(48deg) rotateZ(-8deg);
+  transform-origin: center;
+  transition: transform 0.4s ease;
+}
+
+.map-perspective-plane:hover {
+  transform: perspective(520px) rotateX(44deg) rotateZ(-6deg);
+}
+
+.shop-marker-pin {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  border-radius: 50% 50% 50% 8px;
+  transform-origin: center;
+  transform: translate(-50%, -100%) rotate(-45deg);
+  background: #0d9488;
+  border: 4px solid #ffffff;
+  box-shadow: 0 10px 22px rgba(13, 148, 136, 0.4);
+  animation: pulse-pin 2s infinite ease-in-out;
+}
+
+.shop-marker-pin::after {
+  content: "✚";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: white;
+  font-size: 19px;
+  font-weight: bold;
+  transform: rotate(45deg);
+}
+
+@keyframes pulse-pin {
+  0%, 100% {
+    transform: translate(-50%, -100%) rotate(-45deg) scale(1);
+  }
+  50% {
+    transform: translate(-50%, -108%) rotate(-45deg) scale(1.06);
+  }
+}
