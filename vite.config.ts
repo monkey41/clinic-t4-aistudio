@@ -1,6 +1,6 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import path from 'path';
+import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
@@ -14,11 +14,12 @@ export default defineConfig(() => {
         includeAssets: ['apple-touch-icon.png', 'icon.svg'],
         manifest: {
           id: '/',
-          name: 'CarePlus Pharmacy & Clinic',
-          short_name: 'CarePlus',
-          description: 'Multilingual community pharmacy and clinic portal with doctor consultations and physiotherapy supplies.',
-          theme_color: '#0d4a44',
-          background_color: '#0d4a44',
+          name: 'Life Care Medicine Store and Poly Clinic',
+          short_name: 'Life Care',
+          description:
+            'Community pharmacy and poly clinic portal with specialist doctor OPD consultations, pathology blood test bookings, and physiotherapy supplies.',
+          theme_color: '#4987A4',
+          background_color: '#4987A4',
           display: 'standalone',
           start_url: '/',
           scope: '/',
@@ -51,8 +52,14 @@ export default defineConfig(() => {
     ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': fileURLToPath(new URL('.', import.meta.url)),
       },
+    },
+    build: {
+      outDir: 'dist',
+      emptyOutDir: true,
+      sourcemap: false,
+      target: 'es2022',
     },
     server: {
       host: '0.0.0.0',

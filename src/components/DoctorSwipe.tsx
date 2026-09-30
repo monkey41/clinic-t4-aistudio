@@ -30,8 +30,8 @@ export const DoctorSwipe: React.FC<DoctorSwipeProps> = ({
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFrozen, setIsFrozen] = useState(false);
-  const freezeTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const autoSwipeTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const freezeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSwipeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const theme = getThemePalette(isDark, darkColor);
   const total = doctors.length;
