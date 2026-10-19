@@ -1,7 +1,5 @@
 export type Language = 'en' | 'or' | 'bn' | 'sat';
 
-export type DarkColorOption = 'ocean' | 'black' | 'babypink';
-
 export interface Doctor {
   id: string;
   name: string;
@@ -78,4 +76,19 @@ export interface BookingHistoryItem {
   timestamp: string;
   url: string;
   status: 'Visited Portal' | 'Booked';
+}
+
+export interface ClinicConfig {
+  name: string;
+  subName: string;
+  lat: number;
+  lng: number;
+  phone: string;
+  whatsapp: string;
+  whatsappDisplay: string;
+  address: string;
+  hours: string;
+  emergencyContact: string;
+  doctorBookingUrl: string;
+  pathologyBookingUrl: string;
 }

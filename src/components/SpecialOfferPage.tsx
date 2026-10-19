@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { SpecialOffer, DarkColorOption } from '../types';
+import { SpecialOffer } from '../types';
 import {
   DEFAULT_SPECIAL_OFFERS,
   CLINIC_CONFIG,
@@ -24,18 +24,14 @@ import {
 interface SpecialOfferPageProps {
   offers: SpecialOffer[];
   onBack: () => void;
-  isDark?: boolean;
-  darkColor?: DarkColorOption;
 }
 
 export const SpecialOfferPage: React.FC<SpecialOfferPageProps> = ({
   offers,
   onBack,
-  isDark = false,
-  darkColor = 'ocean',
 }) => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const p = getThemePalette(isDark, darkColor);
+  const p = getThemePalette();
 
   const displayOffers = offers.length > 0 ? offers : DEFAULT_SPECIAL_OFFERS;
 

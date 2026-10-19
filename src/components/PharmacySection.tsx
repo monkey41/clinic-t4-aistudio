@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Product, CartItem, DarkColorOption } from '../types';
+import { Product, CartItem } from '../types';
 import {
   ShoppingBag,
   Plus,
@@ -16,16 +16,12 @@ interface PharmacySectionProps {
   products: Product[];
   t: Record<string, string>;
   defaultCategory?: 'all' | 'physio' | 'medicines';
-  isDark?: boolean;
-  darkColor?: DarkColorOption;
 }
 
 export const PharmacySection: React.FC<PharmacySectionProps> = ({
   products,
   t,
   defaultCategory = 'all',
-  isDark = false,
-  darkColor = 'ocean',
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>(defaultCategory);
   const [searchQuery, setSearchQuery] = useState('');
@@ -35,7 +31,7 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
   const [customerPhone, setCustomerPhone] = useState('');
   const categoryScrollRef = useRef<HTMLDivElement>(null);
 
-  const theme = getThemePalette(isDark, darkColor);
+  const theme = getThemePalette();
 
   const scrollCategories = (direction: 'left' | 'right') => {
     if (categoryScrollRef.current) {
@@ -157,11 +153,7 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search medicines, knee braces, thermometers, baby cream..."
-          className={`w-full pl-9 pr-3.5 py-2.5 text-xs rounded-xl focus:outline-hidden shadow-2xs transition-colors border ${
-            isDark
-              ? `${theme.cardBg} placeholder:opacity-60`
-              : 'bg-white border-teal-200 text-slate-900 focus:border-teal-700'
-          }`}
+          className="w-full pl-9 pr-3.5 py-2.5 text-xs rounded-xl focus:outline-hidden shadow-2xs transition-colors border bg-white border-teal-200 text-slate-900 focus:border-teal-700"
         />
       </div>
 

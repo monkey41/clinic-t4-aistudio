@@ -10,11 +10,10 @@ import {
   Clock,
 } from 'lucide-react';
 import { MonthCalendar } from './MonthCalendar';
-import { DarkColorOption, BookingHistoryItem } from '../types';
+import { BookingHistoryItem, PathologyTest } from '../types';
 import {
-  PATHOLOGY_TESTS,
-  DOCTOR_BOOKING_URL,
-  PATHOLOGY_BOOKING_URL,
+  getPathologyTests,
+  getClinicConfig,
   getThemePalette,
   getBookingHistory,
   addBookingHistoryItem,
@@ -22,15 +21,11 @@ import {
 } from '../data/clinicData';
 
 interface AppointmentsListProps {
-  t: Record<string, string>;
-  isDark?: boolean;
-  darkColor?: DarkColorOption;
+  t?: Record<string, string>;
   initialSubTab?: 'calendar' | 'pathology';
 }
 
 export const AppointmentsList: React.FC<AppointmentsListProps> = ({
-  isDark = false,
-  darkColor = 'ocean',
   initialSubTab = 'calendar',
 }) => {
   const [subTab, setSubTab] = useState<'calendar' | 'pathology'>(initialSubTab);
@@ -39,8 +34,10 @@ export const AppointmentsList: React.FC<AppointmentsListProps> = ({
   const [bookingHistory, setBookingHistory] = useState<BookingHistoryItem[]>(() =>
     getBookingHistory()
   );
+  const [tests, setTests] = useState<PathologyTest[]>(() => getPathologyTests());
+  const [clinicConfig, setClinicConfig] = useState(() => getClinicConfig());
 
-  const p = getThemePalette(isDark, darkColor);
+  const p = getThemePalette();
 
   useEffect(() => {
     setSubTab(initialSubTab);
@@ -48,13 +45,21 @@ export const AppointmentsList: React.FC<AppointmentsListProps> = ({
 
   useEffect(() => {
     const syncHistory = () => setBookingHistory(getBookingHistory());
+    const syncClinicData = () => {
+      setTests(getPathologyTests());
+      setClinicConfig(getClinicConfig());
+    };
     window.addEventListener('booking-history-updated', syncHistory);
-    return () => window.removeEventListener('booking-history-updated', syncHistory);
+    window.addEventListener('clinic-data-updated', syncClinicData);
+    return () => {
+      window.removeEventListener('booking-history-updated', syncHistory);
+      window.removeEventListener('clinic-data-updated', syncClinicData);
+    };
   }, []);
 
-  const categories = ['ALL', ...Array.from(new Set(PATHOLOGY_TESTS.map((t) => t.category)))];
+  const categories = ['ALL', ...Array.from(new Set(tests.map((t) => t.category)))];
 
-  const filteredTests = PATHOLOGY_TESTS.filter((test) => {
+  const filteredTests = tests.filter((test) => {
     const matchesSearch =
       test.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       test.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -62,6 +67,9 @@ export const AppointmentsList: React.FC<AppointmentsListProps> = ({
     const matchesCat = selectedCategory === 'ALL' || test.category === selectedCategory;
     return matchesSearch && matchesCat;
   });
+
+  const doctorBookingUrl = clinicConfig.doctorBookingUrl;
+  const pathologyBookingUrl = clinicConfig.pathologyBookingUrl;
 
   return (
     <section className="py-4 px-4 max-w-xl mx-auto pb-24 space-y-3.5">
@@ -75,7 +83,7 @@ export const AppointmentsList: React.FC<AppointmentsListProps> = ({
         </p>
       </div>
 
-      {/* Direct Booking Portal Buttons (Only buttons leading to the official links — NO in-app forms) */}
+      {/* Direct Booking Portal Buttons */}
       <div className={`rounded-3xl p-4 border shadow-sm space-y-3 ${p.card}`}>
         <div className="flex items-center justify-between">
           <span className={`text-[11px] font-extrabold uppercase tracking-wider ${p.accentText}`}>
@@ -89,7 +97,7 @@ export const AppointmentsList: React.FC<AppointmentsListProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           {/* 1. Doctor OPD Booking Button */}
           <a
-            href={DOCTOR_BOOKING_URL}
+            href={doctorBookingUrl}
             target="_blank"
             rel="noopener noreferrer"
             onClick={() =>
@@ -97,7 +105,7 @@ export const AppointmentsList: React.FC<AppointmentsListProps> = ({
                 type: 'doctor',
                 title: 'Doctor OPD Registration',
                 subtitle: 'Official Doctor OPD Booking Portal',
-                url: DOCTOR_BOOKING_URL,
+                url: doctorBookingUrl,
               })
             }
             className={`py-3.5 px-4 rounded-2xl font-extrabold text-xs shadow-md transition-all active:scale-98 flex items-center justify-center gap-2 ${p.primaryBtn}`}
@@ -109,7 +117,7 @@ export const AppointmentsList: React.FC<AppointmentsListProps> = ({
 
           {/* 2. Pathology Lab Booking Button */}
           <a
-            href={PATHOLOGY_BOOKING_URL}
+            href={pathologyBookingUrl}
             target="_blank"
             rel="noopener noreferrer"
             onClick={() =>
@@ -117,7 +125,7 @@ export const AppointmentsList: React.FC<AppointmentsListProps> = ({
                 type: 'pathology',
                 title: 'Pathology Lab Online Booking',
                 subtitle: 'Official Pathology Test Portal',
-                url: PATHOLOGY_BOOKING_URL,
+                url: pathologyBookingUrl,
               })
             }
             className={`py-3.5 px-4 rounded-2xl font-extrabold text-xs shadow-md transition-all active:scale-98 flex items-center justify-center gap-2 ${p.secondaryBtn}`}
@@ -129,7 +137,7 @@ export const AppointmentsList: React.FC<AppointmentsListProps> = ({
         </div>
       </div>
 
-      {/* SMALL / COMPACT BOOKING HISTORY SECTION */}
+      {/* COMPACT BOOKING HISTORY SECTION */}
       <div className={`rounded-2xl px-3.5 py-2.5 border shadow-2xs ${p.card}`}>
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
@@ -201,124 +209,119 @@ export const AppointmentsList: React.FC<AppointmentsListProps> = ({
         )}
       </div>
 
-      {/* Sub-navigation Switcher: Visit Calendar | Pathology Costs */}
-      <div className={`grid grid-cols-2 gap-1.5 p-1.5 rounded-2xl border ${p.card}`}>
+      {/* Sub Tabs: Doctor Calendar vs Pathology Tests */}
+      <div className="flex rounded-2xl p-1 shadow-inner border border-slate-200 bg-white">
         <button
           type="button"
           onClick={() => setSubTab('calendar')}
-          className={`py-2.5 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-            subTab === 'calendar' ? p.primaryBtn : `${p.subtext} hover:opacity-80`
+          className={`flex-1 py-2.5 px-3 rounded-xl font-extrabold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer ${
+            subTab === 'calendar'
+              ? `${p.primaryBtn} shadow-xs`
+              : `${p.mutedText} hover:${p.heading}`
           }`}
         >
-          <CalendarIcon className="w-3.5 h-3.5 shrink-0" />
+          <CalendarIcon className="w-4 h-4" />
           <span>Doctor Visit Calendar</span>
         </button>
 
         <button
           type="button"
           onClick={() => setSubTab('pathology')}
-          className={`py-2.5 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-            subTab === 'pathology' ? p.secondaryBtn : `${p.subtext} hover:opacity-80`
+          className={`flex-1 py-2.5 px-3 rounded-xl font-extrabold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer ${
+            subTab === 'pathology'
+              ? `${p.secondaryBtn} shadow-xs`
+              : `${p.mutedText} hover:${p.heading}`
           }`}
         >
-          <FlaskConical className="w-3.5 h-3.5 shrink-0" />
-          <span>Pathology Test Costs</span>
+          <FlaskConical className="w-4 h-4" />
+          <span>Pathology Tests ({tests.length})</span>
         </button>
       </div>
 
-      {/* TAB 1: DOCTOR VISIT CALENDAR (Tap once on date to see doctors coming on that day) */}
+      {/* SUB-TAB 1: Doctor Calendar */}
       {subTab === 'calendar' && (
-        <div className="animate-in fade-in">
-          <MonthCalendar isDark={isDark} darkColor={darkColor} />
+        <div className="animate-in fade-in space-y-4">
+          <MonthCalendar />
         </div>
       )}
 
-      {/* TAB 2: PATHOLOGY TESTS & OFFICIAL COSTS */}
+      {/* SUB-TAB 2: Pathology Tests Catalog & Costs */}
       {subTab === 'pathology' && (
-        <div className="space-y-3 animate-in fade-in">
-          <div className={`rounded-2xl p-3.5 border ${p.card}`}>
-            <h3 className={`font-extrabold text-sm flex items-center gap-1.5 ${p.heading}`}>
-              <span>🧪</span> Pathology Blood Test Rate Card
-            </h3>
-            <p className={`text-[11px] ${p.subtext}`}>
-              Tap "Book Test" on any test to open the official Pathology Booking link
-            </p>
-
-            {/* Search Input */}
-            <div className="relative mt-2">
-              <Search
-                className={`w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 ${p.mutedText}`}
-              />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search CBC, Thyroid, LFT, Sugar, Vitamin D..."
-                className={`w-full pl-9 pr-3 py-2 rounded-xl text-xs border focus:outline-hidden ${p.input}`}
-              />
-            </div>
-
-            {/* Category Filter Buttons */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pt-2.5 pb-1 scrollbar-none">
-              {categories.map((cat) => (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`text-[10px] font-bold px-2.5 py-1 rounded-lg whitespace-nowrap cursor-pointer transition-colors ${
-                    selectedCategory === cat
-                      ? p.secondaryBtn
-                      : `${p.cardAlt} border`
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
+        <div className="animate-in fade-in space-y-3">
+          {/* Search Bar */}
+          <div className="relative">
+            <Search className={`w-4 h-4 absolute left-3.5 top-3.5 ${p.mutedText}`} />
+            <input
+              type="text"
+              placeholder="Search tests (e.g. CBC, Thyroid, LFT, Sugar)..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className={`w-full pl-10 pr-4 py-2.5 rounded-2xl border text-xs font-semibold focus:outline-teal-600 transition-colors ${p.input}`}
+            />
           </div>
 
-          {/* Pathology Test Cards with Price & Direct Link Button */}
+          {/* Category Chips Filter */}
+          <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => setSelectedCategory(cat)}
+                className={`px-3 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap transition-all cursor-pointer border ${
+                  selectedCategory === cat
+                    ? p.primaryBtn
+                    : `${p.card} opacity-80 hover:opacity-100`
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+
+          {/* Tests List */}
           <div className="space-y-2.5">
             {filteredTests.map((test) => (
               <div
                 key={test.id}
-                className={`rounded-2xl p-3.5 border shadow-2xs flex items-center justify-between gap-3 transition-all ${p.card}`}
+                className={`rounded-2xl p-3.5 border shadow-xs transition-all ${p.card}`}
               >
-                <div className="min-w-0 flex-1">
-                  <span className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-md ${p.badge}`}>
-                    🧪 {test.category}
-                  </span>
-                  <h4 className={`font-extrabold text-xs sm:text-sm mt-1 ${p.heading}`}>
-                    {test.name}
-                  </h4>
-                  {test.parameters && (
-                    <p className={`text-[11px] mt-0.5 line-clamp-1 ${p.subtext}`}>
-                      Includes: {test.parameters}
-                    </p>
-                  )}
-                </div>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded ${p.badge}`}>
+                      {test.category}
+                    </span>
+                    <h4 className={`font-extrabold text-xs sm:text-sm mt-1 leading-snug ${p.heading}`}>
+                      {test.name}
+                    </h4>
+                    {test.parameters && (
+                      <p className={`text-[11px] mt-1 leading-relaxed ${p.subtext}`}>
+                        {test.parameters}
+                      </p>
+                    )}
+                  </div>
 
-                <div className="flex flex-col items-end gap-1.5 shrink-0">
-                  <span className={`text-sm sm:text-base font-black ${p.accentText}`}>
-                    ₹{test.price}
-                  </span>
-                  <a
-                    href={PATHOLOGY_BOOKING_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={() =>
-                      addBookingHistoryItem({
-                        type: 'pathology',
-                        title: test.name,
-                        subtitle: `${test.category} • ₹${test.price}`,
-                        url: PATHOLOGY_BOOKING_URL,
-                      })
-                    }
-                    className={`active:scale-95 font-extrabold text-[11px] px-3 py-1.5 rounded-xl shadow-2xs flex items-center gap-1 cursor-pointer ${p.secondaryBtn}`}
-                  >
-                    <span>Book Test</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
+                  <div className="text-right shrink-0">
+                    <span className={`text-base font-black block ${p.accentText}`}>
+                      ₹{test.price}
+                    </span>
+                    <a
+                      href={pathologyBookingUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() =>
+                        addBookingHistoryItem({
+                          type: 'pathology',
+                          title: test.name,
+                          subtitle: `₹${test.price} • ${test.category}`,
+                          url: pathologyBookingUrl,
+                        })
+                      }
+                      className={`mt-1.5 inline-flex items-center gap-1 text-[10px] font-extrabold px-2.5 py-1 rounded-lg shadow-2xs ${p.primaryBtn}`}
+                    >
+                      <span>Book</span>
+                      <ExternalLink className="w-2.5 h-2.5" />
+                    </a>
+                  </div>
                 </div>
               </div>
             ))}

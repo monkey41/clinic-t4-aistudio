@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { DarkColorOption } from '../types';
 import { CLINIC_CONFIG, getThemePalette } from '../data/clinicData';
 import { Navigation, Compass, Copy, Check, MapPin, ZoomIn, ZoomOut } from 'lucide-react';
 import L from 'leaflet';
@@ -7,21 +6,17 @@ import 'leaflet/dist/leaflet.css';
 
 interface ClinicMapProps {
   t: Record<string, string>;
-  isDark?: boolean;
-  darkColor?: DarkColorOption;
 }
 
 export const ClinicMap: React.FC<ClinicMapProps> = ({
   t,
-  isDark = false,
-  darkColor = 'ocean',
 }) => {
   const [copied, setCopied] = useState(false);
   const [currentZoom, setCurrentZoom] = useState(17);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const zoomLayerRef = useRef<L.LayerGroup | null>(null);
-  const p = getThemePalette(isDark, darkColor);
+  const p = getThemePalette();
 
   const { lat, lng } = CLINIC_CONFIG;
 

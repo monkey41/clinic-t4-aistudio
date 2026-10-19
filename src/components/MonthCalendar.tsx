@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { DarkColorOption } from '../types';
 import {
   getDoctorsForDate,
   DOCTOR_BOOKING_URL,
@@ -17,20 +16,15 @@ import {
 
 interface MonthCalendarProps {
   t?: Record<string, string>;
-  isDark?: boolean;
-  darkColor?: DarkColorOption;
 }
 
-export const MonthCalendar: React.FC<MonthCalendarProps> = ({
-  isDark = false,
-  darkColor = 'ocean',
-}) => {
+export const MonthCalendar: React.FC<MonthCalendarProps> = () => {
   const today = new Date();
   const [currentYear, setCurrentYear] = useState<number>(today.getFullYear());
   const [currentMonth, setCurrentMonth] = useState<number>(today.getMonth()); // 0-indexed
   const [selectedDay, setSelectedDay] = useState<number>(today.getDate());
 
-  const theme = getThemePalette(isDark, darkColor);
+  const theme = getThemePalette();
 
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',

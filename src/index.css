@@ -11,40 +11,13 @@
   }
 }
 
-/* Light Theme Default Backdrop - #4987A4 fading into White */
+/* Light Theme Backdrop - #4987A4 fading into White */
 .ocean-green-backdrop {
   position: fixed;
   inset: 0;
   z-index: -20;
   pointer-events: none;
   background: linear-gradient(180deg, #4987A4 0%, #9bc2d4 48%, #ffffff 100%);
-}
-
-/* Dark Theme Option 1: Ocean Green */
-.dark-ocean-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: -20;
-  pointer-events: none;
-  background: radial-gradient(circle at 50% 15%, #0f5c54 0%, #06332e 55%, #031c19 100%);
-}
-
-/* Dark Theme Option 2: Black */
-.dark-black-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: -20;
-  pointer-events: none;
-  background: radial-gradient(circle at 50% 15%, #171717 0%, #090909 55%, #000000 100%);
-}
-
-/* Dark Theme Option 3: Baby Pink */
-.dark-babypink-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: -20;
-  pointer-events: none;
-  background: radial-gradient(circle at 50% 15%, #592238 0%, #361321 55%, #1f0a13 100%);
 }
 
 /* Crisp Clean Panels */

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Language, DoctorArrival, SpecialOffer, DarkColorOption } from '../types';
+import { Language, DoctorArrival, SpecialOffer } from '../types';
 import {
   Phone,
   Menu,
@@ -8,7 +8,8 @@ import {
   ArrowRight,
   Sparkles,
   ExternalLink,
-  Check,
+  ShieldAlert,
+  Lock,
 } from 'lucide-react';
 import {
   CLINIC_CONFIG,
@@ -19,29 +20,19 @@ import {
 } from '../data/clinicData';
 
 interface HeaderProps {
-  currentLang: Language;
-  onSelectLang: (lang: Language) => void;
+  currentLang?: Language;
+  onSelectLang?: (lang: Language) => void;
   brandName: string;
-  onTabChange: (tab: 'home' | 'doctors' | 'store' | 'appointments' | 'offers') => void;
+  onTabChange: (tab: 'home' | 'doctors' | 'store' | 'appointments' | 'offers' | 'admin') => void;
   activeTab: string;
-  isDark?: boolean;
-  onToggleDark?: () => void;
-  darkColor?: DarkColorOption;
-  onSelectDarkColor?: (color: DarkColorOption) => void;
   specialOffers?: SpecialOffer[];
   unannouncedArrivals?: DoctorArrival[];
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  currentLang,
-  onSelectLang,
   brandName,
   onTabChange,
   activeTab,
-  isDark = false,
-  onToggleDark,
-  darkColor = 'ocean',
-  onSelectDarkColor,
   specialOffers = DEFAULT_SPECIAL_OFFERS,
   unannouncedArrivals = [],
 }) => {
@@ -50,7 +41,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const notifRef = React.useRef<HTMLDivElement>(null);
 
-  const theme = getThemePalette(isDark, darkColor);
+  const theme = getThemePalette();
   const topOffers = specialOffers.slice(0, 2);
   const totalNotifications = unannouncedArrivals.length + topOffers.length;
 
@@ -72,12 +63,6 @@ export const Header: React.FC<HeaderProps> = ({
     };
   }, [notifOpen]);
 
-  const darkColorOptions: { id: DarkColorOption; label: string; swatchClass: string }[] = [
-    { id: 'ocean', label: 'Ocean Green', swatchClass: 'bg-[#0d9488] border-teal-300' },
-    { id: 'black', label: 'Black', swatchClass: 'bg-[#0a0a0a] border-zinc-400' },
-    { id: 'babypink', label: 'Baby Pink', swatchClass: 'bg-[#f9a8d4] border-pink-200' },
-  ];
-
   return (
     <>
       <header
@@ -90,9 +75,7 @@ export const Header: React.FC<HeaderProps> = ({
               type="button"
               onClick={() => setDrawerOpen(true)}
               aria-label="Open menu"
-              className={`p-1.5 -ml-1 rounded-xl transition-colors cursor-pointer ${
-                isDark ? 'hover:bg-white/10' : 'text-slate-700 hover:text-teal-800 hover:bg-slate-100'
-              }`}
+              className="p-1.5 -ml-1 rounded-xl transition-colors cursor-pointer text-slate-700 hover:text-teal-800 hover:bg-slate-100"
             >
               <Menu className="w-5 h-5" />
             </button>
@@ -120,7 +103,7 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </div>
 
-          {/* Right actions: WhatsApp, Notifications Bell, Language picker & Quick Call */}
+          {/* Right actions: WhatsApp, Admin Icon, Notifications Bell & Call */}
           <div className="flex items-center gap-1.5 sm:gap-2">
             {/* Direct WhatsApp Chat Button */}
             <a
@@ -128,11 +111,7 @@ export const Header: React.FC<HeaderProps> = ({
               target="_blank"
               rel="noopener noreferrer"
               aria-label="Chat on WhatsApp"
-              className={`flex items-center gap-1 text-xs font-bold px-2 py-1.5 rounded-lg transition-colors border ${
-                isDark
-                  ? `${theme.cardBg} hover:opacity-90`
-                  : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-              }`}
+              className="flex items-center gap-1 text-xs font-bold px-2 py-1.5 rounded-lg transition-colors border bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100"
               title="Chat with Clinic on WhatsApp"
             >
               <svg className="w-3.5 h-3.5 fill-[#25D366]" viewBox="0 0 24 24">
@@ -141,30 +120,39 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="hidden xs:inline">WhatsApp</span>
             </a>
 
-            {/* Notification Bell: Doctors Arriving Unannounced & Special Offers (No Admin Alert button/form) */}
+            {/* Quick Admin Portal Button */}
+            <button
+              type="button"
+              onClick={() => onTabChange('admin')}
+              className={`flex items-center gap-1 text-xs font-bold px-2 py-1.5 rounded-lg transition-colors border cursor-pointer ${
+                activeTab === 'admin'
+                  ? 'bg-teal-700 text-white border-teal-700'
+                  : 'bg-white text-slate-700 hover:text-teal-800 border-slate-200 hover:bg-slate-50'
+              }`}
+              title="Admin Portal (Modify Clinic, Doctors, Products & Offers)"
+            >
+              <Lock className="w-3.5 h-3.5 text-teal-700" />
+              <span className="hidden sm:inline">Admin</span>
+            </button>
+
+            {/* Notification Bell: Doctors Arriving Unannounced & Special Offers */}
             <div className="relative" ref={notifRef}>
               <button
                 type="button"
                 onClick={() => setNotifOpen(!notifOpen)}
                 aria-label="Notifications"
-                className={`relative p-2 rounded-xl shadow-2xs transition-all active:scale-95 cursor-pointer border ${
-                  isDark ? theme.cardBg : 'bg-white text-slate-700 hover:text-teal-700 border-slate-200'
-                }`}
+                className="relative p-2 rounded-xl shadow-2xs transition-all active:scale-95 cursor-pointer border bg-white text-slate-700 hover:text-teal-700 border-slate-200"
                 title="Notifications"
               >
                 <Bell className="w-4 h-4" />
                 {totalNotifications > 0 && (
-                  <span
-                    className={`absolute -top-1 -right-1 w-4 h-4 rounded-full text-[9px] font-extrabold flex items-center justify-center shadow-xs animate-pulse ${
-                      isDark ? theme.primaryBtn : 'bg-rose-500 text-white'
-                    }`}
-                  >
+                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[9px] font-extrabold flex items-center justify-center shadow-xs animate-pulse bg-rose-500 text-white">
                     {totalNotifications}
                   </span>
                 )}
               </button>
 
-              {/* Notification Popover Drawer (Clean: No Admin Alert button/form) */}
+              {/* Notification Popover Drawer */}
               {notifOpen && (
                 <>
                   <div
@@ -247,7 +235,7 @@ export const Header: React.FC<HeaderProps> = ({
                             <img
                               src={arrival.photo}
                               alt={arrival.doctorName}
-                              className="w-10 h-10 rounded-xl object-cover object-top border border-white/20 shrink-0"
+                              className="w-10 h-10 rounded-xl object-cover object-top border border-slate-200 shrink-0"
                               referrerPolicy="no-referrer"
                             />
                             <div className="flex-1 min-w-0">
@@ -334,9 +322,7 @@ export const Header: React.FC<HeaderProps> = ({
             <a
               href={`tel:${CLINIC_CONFIG.phone}`}
               aria-label="Call Clinic"
-              className={`hidden sm:flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors border ${
-                isDark ? theme.cardBg : 'text-teal-700 bg-teal-50 hover:bg-teal-100 border-teal-200/60'
-              }`}
+              className="hidden sm:flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors border text-teal-700 bg-teal-50 hover:bg-teal-100 border-teal-200/60"
             >
               <Phone className="w-3.5 h-3.5" />
               <span>Call</span>
@@ -401,7 +387,7 @@ export const Header: React.FC<HeaderProps> = ({
                     activeTab === 'doctors' ? `border ${theme.softCardBg}` : 'hover:opacity-80'
                   }`}
                 >
-                  <span>👨‍⚕️</span> Meet Our Doctors (11)
+                  <span>👨‍⚕️</span> Meet Our Doctors
                 </button>
                 <button
                   type="button"
@@ -439,96 +425,29 @@ export const Header: React.FC<HeaderProps> = ({
                 >
                   <span>🎁</span> Special Offers
                 </button>
-              </div>
 
-              {/* Dark Theme Switch + 3 Separate Color Options (Ocean Green, Black, Baby Pink) */}
-              <div className={`mt-6 pt-4 border-t ${theme.border} space-y-3`}>
-                <div
-                  className={`p-3 rounded-2xl border flex items-center justify-between transition-colors ${theme.softCardBg}`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div
-                      className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm shadow-xs ${theme.primaryBtn}`}
-                    >
-                      {isDark ? '🌙' : '☀️'}
-                    </div>
-                    <div>
-                      <span className={`text-xs font-extrabold block ${theme.headingText}`}>
-                        Dark Theme
-                      </span>
-                      <span className={`text-[10px] block font-medium ${theme.subText}`}>
-                        {isDark
-                          ? `Active: ${
-                              darkColor === 'ocean'
-                                ? 'Ocean Green'
-                                : darkColor === 'black'
-                                ? 'Black'
-                                : 'Baby Pink'
-                            }`
-                          : 'Off (Default Light)'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Toggle Button */}
+                {/* Admin Portal Nav Item (Prominent in Drawer) */}
+                <div className="pt-2">
                   <button
                     type="button"
-                    onClick={onToggleDark}
-                    aria-label="Toggle dark theme"
-                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
-                      isDark ? 'bg-emerald-500' : 'bg-slate-300'
+                    onClick={() => {
+                      onTabChange('admin');
+                      setDrawerOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-2.5 rounded-xl font-extrabold text-xs flex items-center justify-between transition-colors cursor-pointer border ${
+                      activeTab === 'admin'
+                        ? 'bg-teal-700 text-white border-teal-700 shadow-xs'
+                        : 'bg-teal-50/70 text-teal-800 border-teal-200/60 hover:bg-teal-100'
                     }`}
                   >
-                    <span
-                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
-                        isDark ? 'translate-x-5' : 'translate-x-0'
-                      }`}
-                    />
+                    <div className="flex items-center gap-2.5">
+                      <Lock className="w-4 h-4 text-teal-700" />
+                      <span>Admin Management</span>
+                    </div>
+                    <span className="text-[10px] font-bold bg-teal-800 text-white px-1.5 py-0.5 rounded">
+                      Portal
+                    </span>
                   </button>
-                </div>
-
-                {/* 3 Separate Dark Theme Color Options */}
-                <div className={`p-3 rounded-2xl border space-y-2 ${theme.subtleBg}`}>
-                  <span className={`text-[10px] font-extrabold uppercase tracking-wider block ${theme.headingText}`}>
-                    Dark Theme Color Options (Choose 1)
-                  </span>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {darkColorOptions.map((opt) => {
-                      const isSelected = isDark && darkColor === opt.id;
-                      return (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          onClick={() => {
-                            if (!isDark && onToggleDark) {
-                              onToggleDark();
-                            }
-                            if (onSelectDarkColor) {
-                              onSelectDarkColor(opt.id);
-                            }
-                          }}
-                          className={`p-2 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1 ${
-                            isSelected
-                              ? 'ring-2 ring-white font-extrabold bg-black/30 border-white'
-                              : 'opacity-80 hover:opacity-100 border-white/20 bg-black/10'
-                          }`}
-                        >
-                          <span
-                            className={`w-5 h-5 rounded-full border shadow-xs flex items-center justify-center ${opt.swatchClass}`}
-                          >
-                            {isSelected && (
-                              <Check
-                                className={`w-3 h-3 ${
-                                  opt.id === 'babypink' ? 'text-black' : 'text-white'
-                                }`}
-                              />
-                            )}
-                          </span>
-                          <span className="text-[10px] leading-tight">{opt.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
                 </div>
               </div>
             </div>

@@ -1,36 +1,23 @@
 import React from 'react';
 import { Home, Users, Pill, ShieldCheck } from 'lucide-react';
-import { DarkColorOption } from '../types';
 import { CLINIC_CONFIG, getThemePalette } from '../data/clinicData';
 
 interface BottomNavProps {
-  activeTab: 'home' | 'doctors' | 'store' | 'appointments' | 'offers';
-  onTabChange: (tab: 'home' | 'doctors' | 'store' | 'appointments' | 'offers') => void;
+  activeTab: 'home' | 'doctors' | 'store' | 'appointments' | 'offers' | 'admin';
+  onTabChange: (tab: 'home' | 'doctors' | 'store' | 'appointments' | 'offers' | 'admin') => void;
   t: Record<string, string>;
-  isDark?: boolean;
-  darkColor?: DarkColorOption;
 }
 
 export const BottomNav: React.FC<BottomNavProps> = ({
   activeTab,
   onTabChange,
   t,
-  isDark = false,
-  darkColor = 'ocean',
 }) => {
-  const p = getThemePalette(isDark, darkColor);
-
-  const navBg = !isDark
-    ? 'bg-white/95 border-slate-200'
-    : darkColor === 'ocean'
-    ? 'bg-[#042f2e]/95 border-teal-700/60'
-    : darkColor === 'black'
-    ? 'bg-[#050505]/95 border-neutral-800'
-    : 'bg-[#2a0e1d]/95 border-pink-400/35';
+  const p = getThemePalette();
 
   return (
     <nav
-      className={`fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md sm:max-w-xl h-16 backdrop-blur-md border-t flex items-center justify-between z-40 px-2 sm:px-3 shadow-lg transition-colors ${navBg}`}
+      className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md sm:max-w-xl h-16 backdrop-blur-md border-t flex items-center justify-between z-40 px-2 sm:px-3 shadow-lg transition-colors bg-white/95 border-[#4987A4]/25"
     >
       {/* Left Pair: Doctors & Store */}
       <div className="flex-1 flex items-center justify-around">
@@ -69,15 +56,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           type="button"
           onClick={() => onTabChange('home')}
           aria-label="Home"
-          className={`w-12 h-12 -mt-5 rounded-full flex items-center justify-center shadow-md transition-all active:scale-95 border-3 cursor-pointer ${
-            !isDark
-              ? 'border-white'
-              : darkColor === 'ocean'
-              ? 'border-[#042f2e]'
-              : darkColor === 'black'
-              ? 'border-[#050505]'
-              : 'border-[#2a0e1d]'
-          } ${p.primaryBtn}`}
+          className={`w-12 h-12 -mt-5 rounded-full flex items-center justify-center shadow-md transition-all active:scale-95 border-3 cursor-pointer border-white ${p.primaryBtn}`}
         >
           <Home className="w-5 h-5" />
         </button>

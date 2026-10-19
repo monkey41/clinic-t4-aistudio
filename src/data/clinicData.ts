@@ -5,8 +5,8 @@ import {
   DoctorArrival,
   PathologyTest,
   SpecialOffer,
-  DarkColorOption,
   BookingHistoryItem,
+  ClinicConfig,
 } from '../types';
 import kneeBraceImg from '../assets/images/ortho_knee_brace_1790317702669.jpg';
 import lumbarBeltImg from '../assets/images/lumbar_belt_1790317715183.jpg';
@@ -22,39 +22,27 @@ import drKhirodImg from '../assets/images/dr_khirod_bera_1790403915163.jpg';
 export const DOCTOR_BOOKING_URL = 'https://healthmeu.com/application/opdregistration?cl=LIFE6a902f78b9918';
 export const PATHOLOGY_BOOKING_URL = 'https://healthmeu.com/application/patholabonlinebooking?cl=LIFE6a902f78b9918';
 
-// Default Female Doctor Photo (Matches uploaded "default doctor female.jpg")
+// Default Female Doctor Photo (SVG Avatar)
 export const DEFAULT_FEMALE_DOCTOR_PHOTO = `data:image/svg+xml;utf8,${encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" fill="none">
-    <!-- Sky Blue Background -->
     <rect width="500" height="500" fill="#79D3EA"/>
-    <!-- Back Hair (Dark Charcoal Bob) -->
     <path d="M148 188C148 102 195 66 254 66C312 66 352 106 352 188L340 318H160L148 188Z" fill="#2D3134"/>
-    <!-- Neck & Shadow -->
     <path d="M210 250H290V338L250 470L210 338V250Z" fill="#FCE2C4"/>
     <path d="M210 250H290V295C265 308 235 308 210 295V250Z" fill="#EDD0B1"/>
-    <!-- Ears -->
     <ellipse cx="174" cy="212" rx="22" ry="28" transform="rotate(-12 174 212)" fill="#FCE2C4"/>
     <ellipse cx="326" cy="212" rx="22" ry="28" transform="rotate(12 326 212)" fill="#FCE2C4"/>
-    <!-- Faceless Head -->
     <path d="M175 168C175 118 208 92 250 92C292 92 325 118 325 168V212C325 258 290 286 250 286C210 286 175 258 175 212V168Z" fill="#FCE2C4"/>
-    <!-- Side-Parted Front Hair -->
     <path d="M162 198C162 125 202 82 258 82C302 82 336 112 338 175C322 162 312 145 306 128C276 148 216 154 175 198H162Z" fill="#2D3134"/>
-    <!-- Teal Inner Scrub V-Neck -->
     <path d="M198 302L250 472L302 302H280L250 356L220 302H198Z" fill="#0C9B9E"/>
-    <!-- White Lab Coat -->
     <path d="M104 316C116 304 162 298 200 298L250 472L300 298C338 298 384 304 396 316L436 500H64L104 316Z" fill="#FFFFFF"/>
-    <!-- Coat Sleeve Lines -->
     <path d="M144 392L136 500" stroke="#D5DBDD" stroke-width="7"/>
     <path d="M356 392L364 500" stroke="#D5DBDD" stroke-width="7"/>
-    <!-- Coat Notched Lapels -->
     <path d="M200 298L154 374L194 380L182 422L250 492V472L200 298Z" fill="#EAEFEF"/>
     <path d="M300 298L346 374L306 380L318 422L250 492V472L300 298Z" fill="#EAEFEF"/>
-    <!-- Stethoscope Left Side (Tube + Chestpiece) -->
     <path d="M210 284C185 306 178 365 182 436" stroke="#53585B" stroke-width="11" stroke-linecap="round"/>
     <circle cx="183" cy="442" r="20" fill="#53585B"/>
     <circle cx="183" cy="442" r="14" fill="#E4E8EA"/>
     <circle cx="183" cy="442" r="10" fill="#7F8588"/>
-    <!-- Stethoscope Right Side (Binaural U-Loop) -->
     <path d="M290 284C308 296 318 314 318 334" stroke="#53585B" stroke-width="11" stroke-linecap="round"/>
     <path d="M294 362C294 334 312 324 328 324C344 324 362 334 362 362" stroke="#53585B" stroke-width="11" stroke-linecap="round"/>
     <path d="M294 362C294 394 306 410 320 410" stroke="#B6BCBE" stroke-width="7" stroke-linecap="round"/>
@@ -64,44 +52,32 @@ export const DEFAULT_FEMALE_DOCTOR_PHOTO = `data:image/svg+xml;utf8,${encodeURIC
   </svg>`
 )}`;
 
-// Default Male Doctor Photo (Matches uploaded "default doctor male.jpg")
+// Default Male Doctor Photo (SVG Avatar)
 export const DEFAULT_MALE_DOCTOR_PHOTO = `data:image/svg+xml;utf8,${encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" fill="none">
-    <!-- Warm Cream Background -->
     <rect width="500" height="500" fill="#FFF6E5"/>
-    <!-- Neck in Warm Coral-Tan -->
     <path d="M208 252H292V345L250 385L208 345V252Z" fill="#F28E6E"/>
     <path d="M208 252H292V298C266 314 234 314 208 298V252Z" fill="#E47B5B"/>
-    <!-- Ears -->
     <ellipse cx="180" cy="212" rx="18" ry="26" transform="rotate(-8 180 212)" fill="#F5B18C"/>
     <ellipse cx="320" cy="212" rx="18" ry="26" transform="rotate(8 320 212)" fill="#F5B18C"/>
-    <!-- Faceless Head -->
     <path d="M182 162C182 115 212 92 250 92C288 92 318 115 318 162V214C318 260 286 290 250 290C214 290 182 260 182 214V162Z" fill="#FDDAB7"/>
-    <!-- Parted Dark Navy-Slate Hair -->
     <path d="M174 188C168 140 185 95 232 78C262 66 295 76 312 98C332 106 340 135 332 184C325 198 322 210 318 216C316 192 314 166 296 144C272 138 242 140 220 156C204 168 192 192 186 216C180 206 176 196 174 188Z" fill="#173342"/>
-    <!-- Aqua-Mint Shirt & Collar -->
     <path d="M196 300L250 455L304 300H196Z" fill="#BCEAE3"/>
     <path d="M206 294L250 342L224 374L194 318L206 294Z" fill="#C7F0EA"/>
     <path d="M294 294L250 342L276 374L306 318L294 294Z" fill="#C7F0EA"/>
-    <!-- Deep Teal-Blue Necktie -->
     <path d="M236 334H264L258 360H242L236 334Z" fill="#155B78"/>
     <path d="M242 360H258L266 442L250 462L234 442L242 360Z" fill="#186A8B"/>
-    <!-- White Lab Coat -->
     <path d="M92 342C106 312 152 298 198 296L250 458L302 296C348 298 394 312 408 342L440 468C380 482 120 482 60 468L92 342Z" fill="#F4F9F9"/>
-    <!-- Soft Coat Shading -->
     <path d="M60 468L92 342C102 322 122 310 146 304L126 474C98 472 76 470 60 468Z" fill="#D8ECEA"/>
     <path d="M440 468L408 342C398 322 378 310 354 304L374 474C402 472 424 470 440 468Z" fill="#D8ECEA"/>
-    <!-- Coat Lapels -->
     <path d="M198 296L176 358L202 368L188 394L250 462V448L198 296Z" fill="#FFFFFF" stroke="#D2E6E4" stroke-width="3"/>
     <path d="M302 296L324 358L298 368L312 394L250 462V448L302 296Z" fill="#FFFFFF" stroke="#D2E6E4" stroke-width="3"/>
-    <!-- Stethoscope Left Side (Binaural U-Loop) -->
     <path d="M204 282C182 296 168 328 168 368" stroke="#164F68" stroke-width="11" stroke-linecap="round"/>
     <path d="M144 398C144 374 156 364 168 364C180 364 192 374 192 398" stroke="#164F68" stroke-width="11" stroke-linecap="round"/>
     <path d="M144 398V454C144 468 152 474 160 474" stroke="#B7CBCD" stroke-width="8" stroke-linecap="round"/>
     <path d="M192 398V454C192 468 184 474 176 474" stroke="#B7CBCD" stroke-width="8" stroke-linecap="round"/>
     <circle cx="161" cy="474" r="5" fill="#FFFFFF"/>
     <circle cx="175" cy="474" r="5" fill="#FFFFFF"/>
-    <!-- Stethoscope Right Side (Tube + Chestpiece with Cross) -->
     <path d="M296 282C324 302 342 348 348 410" stroke="#164F68" stroke-width="11" stroke-linecap="round"/>
     <circle cx="348" cy="422" r="25" fill="#164F68"/>
     <circle cx="348" cy="422" r="15" fill="#FFFFFF"/>
@@ -109,7 +85,7 @@ export const DEFAULT_MALE_DOCTOR_PHOTO = `data:image/svg+xml;utf8,${encodeURICom
   </svg>`
 )}`;
 
-export const CLINIC_CONFIG = {
+export const DEFAULT_CLINIC_CONFIG: ClinicConfig = {
   name: 'Life Care Medicine Store and Poly Clinic',
   subName: 'Life Care Medicine Store and Poly Clinic',
   lat: 21.9321130,
@@ -120,123 +96,48 @@ export const CLINIC_CONFIG = {
   address: 'Hospital Square / Kabarkhana Road, Baripada, Odisha 757001',
   hours: 'Mon - Sun: 8:00 AM - 10:00 PM',
   emergencyContact: '+91 82491 80905 / 7894547610',
+  doctorBookingUrl: DOCTOR_BOOKING_URL,
+  pathologyBookingUrl: PATHOLOGY_BOOKING_URL,
 };
 
-// Cohesive single-color theme helper for Light mode (#4987A4 fading to white) vs 3 Dark Theme Color Options (Ocean Green, Black, Baby Pink)
-export function getThemePalette(isDark: boolean, darkColor: DarkColorOption = 'ocean') {
-  if (!isDark) {
-    return {
-      backdropClass: 'ocean-green-backdrop',
-      outerBg: 'bg-gradient-to-b from-[#4987A4] via-[#9bc2d4] to-white text-slate-800',
-      pageBg: 'bg-gradient-to-b from-[#4987A4] via-[#9bc2d4] to-white text-slate-800',
-      shellBg: 'bg-gradient-to-b from-[#4987A4] via-[#bcd7e4] to-white border-[#4987A4]/30 text-slate-800',
-      headerBg: 'bg-white/95 border-[#4987A4]/25 text-slate-800',
-      cardBg: 'bg-white border-slate-200 text-slate-800',
-      card: 'bg-white border-slate-200 text-slate-800',
-      softCardBg: 'bg-white/95 border-slate-200 text-slate-900',
-      cardAlt: 'bg-white/95 border-slate-200 text-slate-900',
-      subtleBg: 'bg-slate-50/90 border-slate-200 text-slate-900',
-      headingText: 'text-slate-900',
-      heading: 'text-slate-900',
-      subText: 'text-slate-600',
-      subtext: 'text-slate-600',
-      mutedText: 'text-slate-500',
-      accentText: 'text-teal-700',
-      primaryBtn: 'bg-teal-700 hover:bg-teal-800 text-white',
-      secondaryBtn: 'bg-rose-600 hover:bg-rose-700 text-white',
-      badge: 'bg-teal-50 text-teal-800 border-teal-200',
-      border: 'border-slate-200',
-      divider: 'border-slate-200',
-      input: 'bg-white border-slate-200 text-slate-900 placeholder:text-slate-400',
-      navBg: 'bg-white/95 border-[#4987A4]/25',
-      footerBg: 'border-slate-200 bg-white/90 text-slate-600',
-    };
-  }
+export const CLINIC_CONFIG = DEFAULT_CLINIC_CONFIG;
 
-  if (darkColor === 'black') {
-    return {
-      backdropClass: 'dark-black-backdrop',
-      outerBg: 'bg-[#000000] text-zinc-100',
-      pageBg: 'bg-[#000000] text-zinc-100',
-      shellBg: 'bg-[#0a0a0a] border-zinc-800 text-zinc-100',
-      headerBg: 'bg-[#0a0a0a]/95 border-zinc-800 text-zinc-100',
-      cardBg: 'bg-[#121212] border-zinc-800 text-zinc-100',
-      card: 'bg-[#121212] border-zinc-800 text-zinc-100',
-      softCardBg: 'bg-[#161616] border-zinc-700 text-white',
-      cardAlt: 'bg-[#161616] border-zinc-700 text-white',
-      subtleBg: 'bg-[#1c1c1c] border-zinc-700 text-zinc-200',
-      headingText: 'text-white',
-      heading: 'text-white',
-      subText: 'text-zinc-400',
-      subtext: 'text-zinc-400',
-      mutedText: 'text-zinc-500',
-      accentText: 'text-zinc-200',
-      primaryBtn: 'bg-white hover:bg-zinc-200 text-black',
-      secondaryBtn: 'bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-600',
-      badge: 'bg-zinc-900 text-zinc-200 border-zinc-700',
-      border: 'border-zinc-800',
-      divider: 'border-zinc-800',
-      input: 'bg-[#161616] border-zinc-700 text-white placeholder:text-zinc-500',
-      navBg: 'bg-[#0a0a0a]/95 border-zinc-800',
-      footerBg: 'border-zinc-800 bg-[#050505] text-zinc-400',
-    };
+// Event notifier for instant reactive updates across the entire app
+export function notifyClinicDataChanged(): void {
+  try {
+    window.dispatchEvent(new CustomEvent('clinic-data-updated'));
+  } catch {
+    // ignore
   }
+}
 
-  if (darkColor === 'babypink') {
-    return {
-      backdropClass: 'dark-babypink-backdrop',
-      outerBg: 'bg-[#1f0a13] text-pink-50',
-      pageBg: 'bg-[#1f0a13] text-pink-50',
-      shellBg: 'bg-[#2b101c] border-pink-300/40 text-pink-50',
-      headerBg: 'bg-[#260e18]/95 border-pink-300/40 text-pink-100',
-      cardBg: 'bg-[#361524] border-pink-300/40 text-pink-50',
-      card: 'bg-[#361524] border-pink-300/40 text-pink-50',
-      softCardBg: 'bg-[#421a2c] border-pink-300/50 text-pink-50',
-      cardAlt: 'bg-[#421a2c] border-pink-300/50 text-pink-50',
-      subtleBg: 'bg-[#4d1f34] border-pink-300/45 text-pink-100',
-      headingText: 'text-pink-100',
-      heading: 'text-pink-100',
-      subText: 'text-pink-200/80',
-      subtext: 'text-pink-200/80',
-      mutedText: 'text-pink-300/70',
-      accentText: 'text-pink-300',
-      primaryBtn: 'bg-[#f9a8d4] hover:bg-[#fbcfe8] text-[#260e18]',
-      secondaryBtn: 'bg-[#f472b6] hover:bg-[#f9a8d4] text-[#260e18]',
-      badge: 'bg-[#4d1f34] text-pink-200 border-pink-300/50',
-      border: 'border-pink-300/35',
-      divider: 'border-pink-300/35',
-      input: 'bg-[#421a2c] border-pink-300/40 text-pink-50 placeholder:text-pink-200/50',
-      navBg: 'bg-[#260e18]/95 border-pink-300/40',
-      footerBg: 'border-pink-300/30 bg-[#1f0a13] text-pink-200/80',
-    };
-  }
-
-  // Default Dark Option 1: Ocean Green ('ocean')
+// Single cohesive light theme palette (#4987A4 fading into white)
+export function getThemePalette(_isDark?: boolean, _darkColor?: string) {
   return {
-    backdropClass: 'dark-ocean-backdrop',
-    outerBg: 'bg-[#031c19] text-teal-50',
-    pageBg: 'bg-[#031c19] text-teal-50',
-    shellBg: 'bg-[#062925] border-[#115e59] text-teal-50',
-    headerBg: 'bg-[#04221f]/95 border-[#115e59] text-teal-50',
-    cardBg: 'bg-[#083530] border-[#136c65] text-teal-50',
-    card: 'bg-[#083530] border-[#136c65] text-teal-50',
-    softCardBg: 'bg-[#0b423c] border-[#178078] text-white',
-    cardAlt: 'bg-[#0b423c] border-[#178078] text-white',
-    subtleBg: 'bg-[#0d4f48] border-teal-600/60 text-teal-100',
-    headingText: 'text-white',
-    heading: 'text-white',
-    subText: 'text-teal-200/85',
-    subtext: 'text-teal-200/85',
-    mutedText: 'text-teal-300/70',
-    accentText: 'text-teal-300',
-    primaryBtn: 'bg-teal-500 hover:bg-teal-400 text-slate-950',
-    secondaryBtn: 'bg-emerald-600 hover:bg-emerald-500 text-white',
-    badge: 'bg-[#052925] text-teal-200 border-teal-600/60',
-    border: 'border-[#115e59]',
-    divider: 'border-[#115e59]',
-    input: 'bg-[#0b423c] border-[#178078] text-white placeholder:text-teal-200/50',
-    navBg: 'bg-[#04221f]/95 border-[#115e59]',
-    footerBg: 'border-[#0f524b] bg-[#031c19] text-teal-300/80',
+    backdropClass: 'ocean-green-backdrop',
+    outerBg: 'bg-gradient-to-b from-[#4987A4] via-[#9bc2d4] to-white text-slate-800',
+    pageBg: 'bg-gradient-to-b from-[#4987A4] via-[#9bc2d4] to-white text-slate-800',
+    shellBg: 'bg-gradient-to-b from-[#4987A4] via-[#bcd7e4] to-white border-[#4987A4]/30 text-slate-800',
+    headerBg: 'bg-white/95 border-[#4987A4]/25 text-slate-800',
+    cardBg: 'bg-white border-slate-200 text-slate-800',
+    card: 'bg-white border-slate-200 text-slate-800',
+    softCardBg: 'bg-white/95 border-slate-200 text-slate-900',
+    cardAlt: 'bg-white/95 border-slate-200 text-slate-900',
+    subtleBg: 'bg-slate-50/90 border-slate-200 text-slate-900',
+    headingText: 'text-slate-900',
+    heading: 'text-slate-900',
+    subText: 'text-slate-600',
+    subtext: 'text-slate-600',
+    mutedText: 'text-slate-500',
+    accentText: 'text-teal-700',
+    primaryBtn: 'bg-teal-700 hover:bg-teal-800 text-white',
+    secondaryBtn: 'bg-rose-600 hover:bg-rose-700 text-white',
+    badge: 'bg-teal-50 text-teal-800 border-teal-200',
+    border: 'border-slate-200',
+    divider: 'border-slate-200',
+    input: 'bg-white border-slate-200 text-slate-900 placeholder:text-slate-400',
+    navBg: 'bg-white/95 border-[#4987A4]/25',
+    footerBg: 'border-slate-200 bg-white/90 text-slate-600',
   };
 }
 
@@ -415,10 +316,8 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
   }
 };
 
-// All 11 Specialist Doctors:
-// - 4 doctors use their exact original uploaded photos
-// - Other 7 doctors use the uploaded Default Male / Default Female Doctor images
-export const DOCTORS: Doctor[] = [
+// Initial Default Specialist Doctors
+export const DEFAULT_DOCTORS: Doctor[] = [
   {
     id: '6a903663547e9',
     name: 'DR AJIT KUMAR NAYAK',
@@ -542,6 +441,31 @@ export const DOCTORS: Doctor[] = [
   },
 ];
 
+export const DOCTORS = DEFAULT_DOCTORS;
+
+// Doctors CRUD & Persistence
+export function getDoctors(): Doctor[] {
+  try {
+    const saved = localStorage.getItem('lifecare_doctors');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.error(e);
+  }
+  return DEFAULT_DOCTORS;
+}
+
+export function saveDoctors(doctors: Doctor[]): void {
+  try {
+    localStorage.setItem('lifecare_doctors', JSON.stringify(doctors));
+    notifyClinicDataChanged();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
 // Notifications for Doctors Arriving Unannounced
 const todayDateObj = new Date();
 const todayISO = todayDateObj.toISOString().split('T')[0];
@@ -598,12 +522,21 @@ export function getUnannouncedArrivals(): DoctorArrival[] {
     const saved = localStorage.getItem('lifecare_unannounced_arrivals');
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) return parsed;
     }
   } catch (e) {
     console.error(e);
   }
   return DEFAULT_UNANNOUNCED_ARRIVALS;
+}
+
+export function saveUnannouncedArrivals(arrivals: DoctorArrival[]): void {
+  try {
+    localStorage.setItem('lifecare_unannounced_arrivals', JSON.stringify(arrivals));
+    notifyClinicDataChanged();
+  } catch (e) {
+    console.error(e);
+  }
 }
 
 // Compact Booking History Helpers
@@ -654,7 +587,7 @@ export function addBookingHistoryItem(
     url,
     status: 'Booked',
   };
-  const updated = [newItem, ...current].slice(0, 6);
+  const updated = [newItem, ...current].slice(0, 15);
   try {
     localStorage.setItem('lifecare_compact_booking_history', JSON.stringify(updated));
     window.dispatchEvent(new CustomEvent('booking-history-updated'));
@@ -673,6 +606,29 @@ export function clearBookingHistory(): void {
   }
 }
 
+// Clinic Config (Address, Phone, WhatsApp, Booking URLs)
+export function getClinicConfig(): ClinicConfig {
+  try {
+    const saved = localStorage.getItem('lifecare_clinic_config');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && parsed.name) return { ...DEFAULT_CLINIC_CONFIG, ...parsed };
+    }
+  } catch (e) {
+    console.error(e);
+  }
+  return DEFAULT_CLINIC_CONFIG;
+}
+
+export function saveClinicConfig(config: ClinicConfig): void {
+  try {
+    localStorage.setItem('lifecare_clinic_config', JSON.stringify(config));
+    notifyClinicDataChanged();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
 // Returns all doctors coming on a specific calendar date when tapped once
 export function getDoctorsForDate(year: number, monthIndex: number, day: number): DoctorArrival[] {
   const monthStr = String(monthIndex + 1).padStart(2, '0');
@@ -680,6 +636,7 @@ export function getDoctorsForDate(year: number, monthIndex: number, day: number)
   const dateStr = `${year}-${monthStr}-${dayStr}`;
   const weekday = new Date(year, monthIndex, day).getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
 
+  const currentDoctors = getDoctors();
   const doctorsOnDay: DoctorArrival[] = [];
 
   // 1. Include any Unannounced Doctor Arrivals for this date
@@ -706,19 +663,24 @@ export function getDoctorsForDate(year: number, monthIndex: number, day: number)
     }
   };
 
+  const drAjit = currentDoctors.find((d) => d.id === '6a903663547e9') || currentDoctors[0];
+  const drNilamadhab = currentDoctors.find((d) => d.id === '6a903bfc17c3c') || currentDoctors[1];
+  const drManabendra = currentDoctors.find((d) => d.id === '6a929889e95d9') || currentDoctors[2];
+  const drBera = currentDoctors.find((d) => d.id === '6aafa844b4af3') || currentDoctors[3];
+
   // 2. 14th to 17th: DR AJIT KUMAR NAYAK (Neurosurgery)
-  if (day >= 14 && day <= 17) {
+  if (day >= 14 && day <= 17 && drAjit) {
     addDocIfNotPresent(
-      DOCTORS[0],
+      drAjit,
       '12:30 PM - 02:00 PM (Morning Slots: 09:00 AM - 01:00 PM)',
       'Brain, Spine, Headache, Vertigo & Seizures Consultation'
     );
   }
 
   // 3. Every Friday: DR NILAMADHABA MAHALILK (Gastroenterology)
-  if (weekday === 5) {
+  if (weekday === 5 && drNilamadhab) {
     addDocIfNotPresent(
-      DOCTORS[1],
+      drNilamadhab,
       '12:00 PM - 03:00 PM (Friday Speciality OPD)',
       'Gastroenterology, Hepatology & Liver Care'
     );
@@ -726,12 +688,14 @@ export function getDoctorsForDate(year: number, monthIndex: number, day: number)
 
   // 4. Every Saturday: Dr. Manabendra Dash & DR.JAGANNATH MAJHI
   if (weekday === 6) {
-    addDocIfNotPresent(
-      DOCTORS[2],
-      '10:00 AM - 01:00 PM & 06:00 PM - 08:00 PM',
-      'Dermatology, Skin, Laser & Hair Consultation'
-    );
-    const jagannath = DOCTORS.find((d) => d.id === '6ab385e175ffe');
+    if (drManabendra) {
+      addDocIfNotPresent(
+        drManabendra,
+        '10:00 AM - 01:00 PM & 06:00 PM - 08:00 PM',
+        'Dermatology, Skin, Laser & Hair Consultation'
+      );
+    }
+    const jagannath = currentDoctors.find((d) => d.id === '6ab385e175ffe');
     if (jagannath) {
       addDocIfNotPresent(jagannath, '06:00 PM - 08:30 PM', 'General Medicine OPD');
     }
@@ -739,12 +703,14 @@ export function getDoctorsForDate(year: number, monthIndex: number, day: number)
 
   // 5. Every Sunday: Dr. Manabendra Dash & Dr. Aditya Prasad Padhy
   if (weekday === 0) {
-    addDocIfNotPresent(
-      DOCTORS[2],
-      '10:00 AM - 01:00 PM & 06:00 PM - 08:00 PM',
-      'Sunday Dermatology & Laser Consultation'
-    );
-    const aditya = DOCTORS.find((d) => d.id === '6a9299efca332');
+    if (drManabendra) {
+      addDocIfNotPresent(
+        drManabendra,
+        '10:00 AM - 01:00 PM & 06:00 PM - 08:00 PM',
+        'Sunday Dermatology & Laser Consultation'
+      );
+    }
+    const aditya = currentDoctors.find((d) => d.id === '6a9299efca332');
     if (aditya) {
       addDocIfNotPresent(aditya, '12:00 PM - 01:00 PM', 'Sunday Senior Specialist OPD');
     }
@@ -752,37 +718,39 @@ export function getDoctorsForDate(year: number, monthIndex: number, day: number)
 
   // 6. Monday & Wednesday: DR.DEEPAK NAIK & Dr. SIDHESWAR BASKEY
   if (weekday === 1 || weekday === 3) {
-    const deepak = DOCTORS.find((d) => d.id === '6a926099bf67f');
-    const baskey = DOCTORS.find((d) => d.id === '6a929b48cff95');
+    const deepak = currentDoctors.find((d) => d.id === '6a926099bf67f');
+    const baskey = currentDoctors.find((d) => d.id === '6a929b48cff95');
     if (deepak) addDocIfNotPresent(deepak, '10:00 AM - 01:30 PM', 'General & Internal Medicine OPD');
     if (baskey) addDocIfNotPresent(baskey, '04:30 PM - 07:30 PM', 'Orthopaedics, Bone & Joint OPD');
   }
 
   // 7. Tuesday & Thursday: Dr.Anjali Tudu, Dr. K.C.K.D.N. Hembram & DR.JAGANNATH MAJHI
   if (weekday === 2 || weekday === 4) {
-    const anjali = DOCTORS.find((d) => d.id === '6a929bdad38b7');
-    const hembram = DOCTORS.find((d) => d.id === '6a991705e2ff5');
-    const jagannath = DOCTORS.find((d) => d.id === '6ab385e175ffe');
+    const anjali = currentDoctors.find((d) => d.id === '6a929bdad38b7');
+    const hembram = currentDoctors.find((d) => d.id === '6a991705e2ff5');
+    const jagannath = currentDoctors.find((d) => d.id === '6ab385e175ffe');
     if (anjali) addDocIfNotPresent(anjali, '10:30 AM - 01:30 PM', "Women's Health & Family Medicine");
     if (hembram) addDocIfNotPresent(hembram, '05:00 PM - 08:00 PM', 'General Physician & Chronic Care');
     if (jagannath) addDocIfNotPresent(jagannath, '06:00 PM - 08:30 PM', 'Multi-Speciality General OPD');
   }
 
-  // 8. Daily Specialists (Mon - Sun): Dr. Purva Mohapatra & DR.K BERA
-  const purva = DOCTORS.find((d) => d.id === '6a929917c2ce5');
+  // 8. Daily Specialists: Dr. Purva Mohapatra & DR.K BERA
+  const purva = currentDoctors.find((d) => d.id === '6a929917c2ce5');
   if (purva) {
     addDocIfNotPresent(purva, '12:00 PM - 02:00 PM (Daily OPD)', 'Obstetrics & Gynaecology Consultation');
   }
-  addDocIfNotPresent(
-    DOCTORS[3],
-    '08:30 AM - 01:30 PM & 04:30 PM - 08:30 PM (Daily)',
-    'Physiotherapy, Ortho & Paralysis Rehabilitation'
-  );
+  if (drBera) {
+    addDocIfNotPresent(
+      drBera,
+      '08:30 AM - 01:30 PM & 04:30 PM - 08:30 PM (Daily)',
+      'Physiotherapy, Ortho & Paralysis Rehabilitation'
+    );
+  }
 
   return doctorsOnDay;
 }
 
-export const PRODUCTS: Product[] = [
+export const DEFAULT_PRODUCTS: Product[] = [
   // Physiotherapy items
   {
     id: 'physio-1',
@@ -914,7 +882,31 @@ export const PRODUCTS: Product[] = [
   }
 ];
 
-export const PATHOLOGY_TESTS: PathologyTest[] = [
+export const PRODUCTS = DEFAULT_PRODUCTS;
+
+export function getProducts(): Product[] {
+  try {
+    const saved = localStorage.getItem('lifecare_products');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.error(e);
+  }
+  return DEFAULT_PRODUCTS;
+}
+
+export function saveProducts(products: Product[]): void {
+  try {
+    localStorage.setItem('lifecare_products', JSON.stringify(products));
+    notifyClinicDataChanged();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+export const DEFAULT_PATHOLOGY_TESTS: PathologyTest[] = [
   { id: '1-3', name: 'COMPLETE BLOOD COUNT (CBC)', category: 'HAEMATOLOGY', price: 300, parameters: 'Hemoglobin, TLC, DLC, Platelet Count, RBC, Hct, MCV, MCH, MCHC' },
   { id: '19-7', name: 'CBC (WITH ABSOLUTE COUNTS)', category: 'HAEMATOLOGY', price: 500, parameters: 'Complete Blood Count with Absolute Neutrophil, Lymphocyte & Eosinophil Counts' },
   { id: '41-8', name: 'CBC WITH ESR', category: 'HAEMATOLOGY', price: 500, parameters: 'Complete Hemogram + Erythrocyte Sedimentation Rate (Wintrobe)' },
@@ -952,6 +944,30 @@ export const PATHOLOGY_TESTS: PathologyTest[] = [
   { id: '235-56', name: 'FREE PSA (PROSTATE SPECIFIC ANTIGEN)', category: 'OTHERS', price: 1000, parameters: 'Prostate Health Screening' },
   { id: '279-99', name: 'CA 125', category: 'OTHERS', price: 900, parameters: 'Ovarian & Women Wellness Biomarker' },
 ];
+
+export const PATHOLOGY_TESTS = DEFAULT_PATHOLOGY_TESTS;
+
+export function getPathologyTests(): PathologyTest[] {
+  try {
+    const saved = localStorage.getItem('lifecare_pathology_tests');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.error(e);
+  }
+  return DEFAULT_PATHOLOGY_TESTS;
+}
+
+export function savePathologyTests(tests: PathologyTest[]): void {
+  try {
+    localStorage.setItem('lifecare_pathology_tests', JSON.stringify(tests));
+    notifyClinicDataChanged();
+  } catch (e) {
+    console.error(e);
+  }
+}
 
 export const DEFAULT_SPECIAL_OFFERS: SpecialOffer[] = [
   {
@@ -1003,3 +1019,43 @@ export const DEFAULT_SPECIAL_OFFERS: SpecialOffer[] = [
     promoCode: 'LIFECARE15',
   },
 ];
+
+export function getSpecialOffers(): SpecialOffer[] {
+  try {
+    const saved = localStorage.getItem('careplus_special_offers');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.error(e);
+  }
+  return DEFAULT_SPECIAL_OFFERS;
+}
+
+export function saveSpecialOffers(offers: SpecialOffer[]): void {
+  try {
+    localStorage.setItem('careplus_special_offers', JSON.stringify(offers));
+    notifyClinicDataChanged();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+// Reset all store data back to factory defaults
+export function resetAllToFactoryDefaults(): void {
+  try {
+    localStorage.removeItem('lifecare_doctors');
+    localStorage.removeItem('lifecare_products');
+    localStorage.removeItem('lifecare_pathology_tests');
+    localStorage.removeItem('careplus_special_offers');
+    localStorage.removeItem('lifecare_unannounced_arrivals');
+    localStorage.removeItem('lifecare_clinic_config');
+    localStorage.removeItem('lifecare_compact_booking_history');
+    localStorage.removeItem('careplus_theme');
+    localStorage.removeItem('careplus_dark_color');
+    notifyClinicDataChanged();
+  } catch (e) {
+    console.error(e);
+  }
+}

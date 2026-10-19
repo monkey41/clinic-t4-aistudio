@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Doctor, DarkColorOption } from '../types';
+import { Doctor } from '../types';
 import {
   ChevronLeft,
   ChevronRight,
@@ -18,23 +18,19 @@ import {
 interface DoctorSwipeProps {
   doctors: Doctor[];
   t: Record<string, string>;
-  isDark?: boolean;
-  darkColor?: DarkColorOption;
 }
 
 export const DoctorSwipe: React.FC<DoctorSwipeProps> = ({
   doctors,
   t,
-  isDark = false,
-  darkColor = 'ocean',
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFrozen, setIsFrozen] = useState(false);
   const freezeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSwipeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const theme = getThemePalette(isDark, darkColor);
-  const total = doctors.length;
+  const theme = getThemePalette();
+  const total = doctors.length || 1;
 
   const handleNext = () => {
     setCurrentIndex((prev) => (prev + 1) % total);
@@ -60,63 +56,57 @@ export const DoctorSwipe: React.FC<DoctorSwipeProps> = ({
 
     autoSwipeTimerRef.current = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % total);
-    }, 5000);
+    }, 4500);
 
     return () => {
       if (autoSwipeTimerRef.current) clearInterval(autoSwipeTimerRef.current);
     };
-  }, [total, isFrozen, currentIndex]);
+  }, [total, isFrozen]);
+
+  if (doctors.length === 0) return null;
 
   return (
-    <section className="py-3 select-none" id="doctors-section">
-      <div className="flex items-center justify-between px-4 mb-3">
-        <div>
-          <h2
-            className={`text-xl font-bold tracking-tight flex items-center gap-2 ${theme.headingText}`}
-          >
-            <span>👨‍⚕️</span> {t.doctors || 'Meet Our Doctors'}
-          </h2>
-          <p className={`text-xs mt-0.5 font-medium ${theme.subText}`}>
-            All {total} Specialists • Life Care Medicine Store and Poly Clinic
-          </p>
-        </div>
-
-        <span
-          className={`text-[11px] font-extrabold px-2.5 py-1 rounded-xl border ${theme.badge}`}
-        >
-          {currentIndex + 1} / {total}
+    <section className="relative px-2 py-4 select-none">
+      <div className="flex items-center justify-between px-3 mb-2">
+        <h2 className={`font-extrabold text-sm tracking-wide ${theme.headingText}`}>
+          👨‍⚕️ {t.doctors || 'Meet Our Doctors'} ({doctors.length})
+        </h2>
+        <span className={`text-[11px] font-bold ${theme.accentText}`}>
+          Swipe cards →
         </span>
       </div>
 
-      {/* Swipe Stage (All 11 Doctors: 4 original photos + default male/female doctor avatars) */}
+      {/* Swipe Stack Container */}
       <div
-        className="relative h-[395px] w-full overflow-hidden flex justify-center items-start pt-1"
-        onPointerDown={triggerTouchFreeze}
+        className="relative w-full h-[400px] flex items-center justify-center overflow-hidden"
+        onTouchStart={triggerTouchFreeze}
+        onMouseDown={triggerTouchFreeze}
       >
-        <div className="relative w-full h-full flex justify-center items-start">
+        <div className="relative w-full h-full flex items-center justify-center">
           {doctors.map((doctor, idx) => {
-            const relIndex = (idx - currentIndex + total) % total;
+            let offset = (idx - currentIndex + total) % total;
+            if (offset > total / 2) offset -= total;
 
-            if (relIndex > 2 && relIndex < total - 1) return null;
+            const isTop = offset === 0;
+            const isVisible = Math.abs(offset) <= 2;
+            if (!isVisible) return null;
 
-            const isTop = relIndex === 0;
-            const translateY = relIndex === 0 ? 0 : relIndex === 1 ? 14 : 28;
-            const scale = relIndex === 0 ? 1 : relIndex === 1 ? 0.94 : 0.88;
-            const zIndex = 20 - relIndex;
-            const opacity = relIndex === 0 ? 1 : relIndex === 1 ? 0.88 : 0.55;
+            const translateY = offset * 14;
+            const scale = 1 - Math.abs(offset) * 0.06;
+            const opacity = 1 - Math.abs(offset) * 0.22;
+            const zIndex = 20 - Math.abs(offset);
 
             return (
               <motion.article
                 key={doctor.id}
                 drag={isTop ? 'x' : false}
                 dragConstraints={{ left: 0, right: 0 }}
-                dragElastic={0.75}
-                onDragStart={triggerTouchFreeze}
-                onDragEnd={(_, info) => {
+                dragElastic={0.7}
+                onDragEnd={(_e, info) => {
                   triggerTouchFreeze();
-                  if (info.offset.x < -35 || info.velocity.x < -200) {
+                  if (info.offset.x < -60) {
                     handleNext();
-                  } else if (info.offset.x > 35 || info.velocity.x > 200) {
+                  } else if (info.offset.x > 60) {
                     handlePrev();
                   }
                 }}
@@ -141,7 +131,7 @@ export const DoctorSwipe: React.FC<DoctorSwipeProps> = ({
                   !isTop ? 'cursor-pointer hover:opacity-95' : ''
                 }`}
                 style={{
-                  boxShadow: isTop ? '0 18px 40px -8px rgba(0,0,0,0.28)' : 'none',
+                  boxShadow: isTop ? '0 18px 40px -8px rgba(0,0,0,0.18)' : 'none',
                   touchAction: 'none',
                 }}
               >
@@ -157,11 +147,7 @@ export const DoctorSwipe: React.FC<DoctorSwipeProps> = ({
                   <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
 
                   {/* Department badge on photo */}
-                  <div
-                    className={`absolute top-3 left-3 backdrop-blur-md text-[11px] font-bold px-2.5 py-1 rounded-xl shadow-xs border flex items-center gap-1 ${
-                      isDark ? theme.badge : 'bg-white/90 text-teal-950 border-white/80'
-                    }`}
-                  >
+                  <div className="absolute top-3 left-3 backdrop-blur-md text-[11px] font-bold px-2.5 py-1 rounded-xl shadow-xs border flex items-center gap-1 bg-white/90 text-teal-950 border-white/80">
                     <span>🩺</span> {doctor.department}
                   </div>
                 </div>

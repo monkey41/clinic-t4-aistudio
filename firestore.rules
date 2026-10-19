@@ -1,0 +1,92 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: Check if user is authenticated via Firebase Auth
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper: Check if user is an authorized admin
+    // Validates custom claims (admin == true or role == 'admin') OR presence in admins collection
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.admin == true ||
+        request.auth.token.role == 'admin' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // Admin directory: Only authorized admins can manage admin privileges
+    // Users cannot write or self-promote into this collection
+    match /admins/{adminId} {
+      allow read: if isAuthenticated() && (request.auth.uid == adminId || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // Public Pharmacy Products:
+    // Anyone (including unauthenticated pharmacy customers) can browse and view products.
+    // Only authorized admins can add, update, change prices, manage inventory, or delete products.
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Doctors catalogue:
+    // Public read for doctor profiles & schedules; write restricted to authorized admins.
+    match /doctors/{doctorId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Special Offers & Promotional Banners:
+    // Public read; write restricted to authorized admins.
+    match /special_offers/{offerId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Doctor Unannounced Arrivals & Urgent Alerts:
+    // Public read; write restricted to authorized admins.
+    match /unannounced_arrivals/{arrivalId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Pathology Lab Tests & Diagnostics:
+    // Public read; write restricted to authorized admins.
+    match /pathology_tests/{testId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Clinic Configuration (Phone, WhatsApp, Timings, Booking Links):
+    // Public read; write restricted to authorized admins.
+    match /clinic_config/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Customer Orders:
+    // Public customers can submit order inquiries or prescription upload orders.
+    // Only the customer who submitted the order or an authorized admin can view or edit it.
+    match /orders/{orderId} {
+      allow create: if true;
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.customerId == request.auth.uid);
+      allow update, delete: if isAdmin() || (isAuthenticated() && resource.data.customerId == request.auth.uid);
+    }
+
+    // Customer Bookings:
+    // Private customer appointments and personal history.
+    match /bookings/{bookingId} {
+      allow create: if true;
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.customerId == request.auth.uid);
+      allow update, delete: if isAdmin();
+    }
+
+    // Default deny all other collections to prevent unrestricted database access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
