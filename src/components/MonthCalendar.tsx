@@ -193,11 +193,17 @@ export const MonthCalendar: React.FC<MonthCalendarProps> = () => {
                   referrerPolicy="no-referrer"
                 />
                 <div className="min-w-0">
-                  {arrival.isUnannounced && (
+                  {arrival.isUnannounced ? (
                     <span
-                      className={`inline-block text-[9px] font-extrabold px-1.5 py-0.2 rounded mb-0.5 ${theme.primaryBtn}`}
+                      className="inline-block text-[9px] font-extrabold px-1.5 py-0.2 rounded mb-0.5 bg-amber-100 text-amber-900 border border-amber-200"
                     >
-                      Unannounced Visit
+                      Availability to be confirmed
+                    </span>
+                  ) : (
+                    <span
+                      className="inline-block text-[9px] font-extrabold px-1.5 py-0.2 rounded mb-0.5 bg-emerald-100 text-emerald-800 border border-emerald-200"
+                    >
+                      Scheduled OPD
                     </span>
                   )}
                   <h5 className={`font-extrabold text-xs sm:text-sm truncate ${theme.headingText}`}>
