@@ -15,6 +15,8 @@ import {
   setDoc,
   deleteDoc,
   getDoc,
+  onSnapshot,
+  Unsubscribe,
   Firestore,
 } from 'firebase/firestore';
 import { Product } from '../types';
@@ -68,6 +70,19 @@ export function getFirebaseDb(): Firestore | null {
     dbInstance = getFirestore(app);
   }
   return dbInstance;
+}
+
+export interface AdminProfile {
+  id: string;
+  email: string;
+  name: string;
+  role: 'Super Admin' | 'Clinic Admin' | 'Store Admin' | 'Staff';
+  active: boolean;
+  activeSessionId?: string;
+  lastLoginAt?: string;
+  lastActiveAt?: string;
+  deviceInfo?: string;
+  createdAt: string;
 }
 
 export interface AdminAuthStatus {
@@ -198,14 +213,242 @@ export async function adminSignIn(
 }
 
 /**
- * Admin Logout
+ * Admin Logout & Session Cleanup
  */
 export async function adminSignOut(): Promise<void> {
   const auth = getFirebaseAuth();
   if (auth) {
-    await signOut(auth);
+    try {
+      await signOut(auth);
+    } catch {
+      // ignore
+    }
   }
   sessionStorage.removeItem('lifecare_admin_auth');
+  sessionStorage.removeItem('lifecare_admin_email');
+  sessionStorage.removeItem('lifecare_admin_session_id');
+  localStorage.removeItem('lifecare_admin_session_id');
+}
+
+/**
+ * Register single active session for an admin in Firestore and local storage.
+ * Enforces one active machine per admin account at any time.
+ */
+export async function registerAdminSession(
+  user: User,
+  adminName?: string
+): Promise<string> {
+  const sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+  localStorage.setItem('lifecare_admin_session_id', sessionId);
+  sessionStorage.setItem('lifecare_admin_session_id', sessionId);
+
+  const db = getFirebaseDb();
+  if (db && user) {
+    try {
+      const adminRef = doc(db, 'admins', user.uid);
+      await setDoc(
+        adminRef,
+        {
+          uid: user.uid,
+          email: (user.email || '').toLowerCase(),
+          name: adminName || user.displayName || 'Clinic Administrator',
+          activeSessionId: sessionId,
+          lastLoginAt: new Date().toISOString(),
+          lastActiveAt: new Date().toISOString(),
+          deviceInfo: typeof navigator !== 'undefined' ? navigator.userAgent.substring(0, 120) : 'Web App',
+          active: true,
+        },
+        { merge: true }
+      );
+    } catch (err) {
+      console.warn('Could not register cloud session, using local session guard:', err);
+    }
+  }
+
+  // Cross-tab notification via BroadcastChannel
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel('lifecare_admin_session_channel');
+      bc.postMessage({ type: 'NEW_SESSION_STARTED', sessionId, uid: user.uid });
+      bc.close();
+    }
+  } catch {
+    // ignore
+  }
+
+  return sessionId;
+}
+
+/**
+ * Real-time listener for the admin's session.
+ * If another machine or browser signs into this admin account, Firestore will update
+ * activeSessionId to a different value, triggering onSessionRevoked immediately.
+ */
+export function listenToAdminSession(
+  uid: string,
+  localSessionId: string,
+  onSessionRevoked: (reason: string) => void
+): () => void {
+  const db = getFirebaseDb();
+  let unsubFirestore: (() => void) | null = null;
+
+  if (db && uid) {
+    try {
+      const adminRef = doc(db, 'admins', uid);
+      unsubFirestore = onSnapshot(
+        adminRef,
+        (snap) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            if (data && data.active === false) {
+              onSessionRevoked('Your administrator account access has been deactivated.');
+              return;
+            }
+            if (data?.activeSessionId && localSessionId && data.activeSessionId !== localSessionId) {
+              onSessionRevoked(
+                'Session Terminated: This admin account was signed in from another machine or browser. Only one active machine is allowed at a time for security.'
+              );
+            }
+          }
+        },
+        (err) => {
+          console.warn('Admin session real-time listener error:', err);
+        }
+      );
+    } catch (err) {
+      console.warn('Could not start Firestore session listener:', err);
+    }
+  }
+
+  // Cross-tab broadcast listener on same machine
+  let bc: BroadcastChannel | null = null;
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      bc = new BroadcastChannel('lifecare_admin_session_channel');
+      bc.onmessage = (event) => {
+        if (
+          event.data?.type === 'NEW_SESSION_STARTED' &&
+          event.data?.uid === uid &&
+          event.data?.sessionId !== localSessionId
+        ) {
+          onSessionRevoked('Signed out: Another session was opened for this admin account.');
+        }
+      };
+    }
+  } catch {
+    // ignore
+  }
+
+  return () => {
+    if (unsubFirestore) unsubFirestore();
+    if (bc) bc.close();
+  };
+}
+
+/**
+ * Fetch all registered administrators from Firestore
+ */
+export async function fetchAllAdmins(): Promise<AdminProfile[]> {
+  const db = getFirebaseDb();
+  const defaultList: AdminProfile[] = [
+    {
+      id: 'primary-admin',
+      email: 'prayaspratikmohanty41@gmail.com',
+      name: 'Primary Clinic Admin',
+      role: 'Super Admin',
+      active: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    },
+  ];
+
+  if (!db) return defaultList;
+
+  try {
+    const adminsCol = collection(db, 'admins');
+    const snap = await getDocs(adminsCol);
+    if (snap.empty) {
+      return defaultList;
+    }
+    const list: AdminProfile[] = [];
+    snap.forEach((d) => {
+      const data = d.data();
+      list.push({
+        id: d.id,
+        email: data.email || '',
+        name: data.name || 'Clinic Admin',
+        role: data.role || 'Clinic Admin',
+        active: data.active !== false,
+        activeSessionId: data.activeSessionId,
+        lastLoginAt: data.lastLoginAt,
+        lastActiveAt: data.lastActiveAt,
+        deviceInfo: data.deviceInfo,
+        createdAt: data.createdAt || new Date().toISOString(),
+      });
+    });
+
+    if (!list.some((a) => a.email.toLowerCase() === 'prayaspratikmohanty41@gmail.com')) {
+      list.unshift(defaultList[0]);
+    }
+
+    return list;
+  } catch (err) {
+    console.warn('Could not fetch admins from Firestore:', err);
+    return defaultList;
+  }
+}
+
+/**
+ * Add or update an administrator in Firestore
+ */
+export async function saveAdminProfile(admin: Partial<AdminProfile>): Promise<boolean> {
+  const db = getFirebaseDb();
+  if (!db || !admin.email) return false;
+
+  const docId = admin.id || admin.email.toLowerCase().replace(/[^a-zA-Z0-9]/g, '_');
+  const adminRef = doc(db, 'admins', docId);
+
+  await setDoc(
+    adminRef,
+    {
+      ...admin,
+      email: admin.email.toLowerCase(),
+      updatedAt: new Date().toISOString(),
+      createdAt: admin.createdAt || new Date().toISOString(),
+      active: admin.active !== false,
+    },
+    { merge: true }
+  );
+
+  return true;
+}
+
+/**
+ * Deactivate or toggle an administrator's access
+ */
+export async function toggleAdminStatus(adminId: string, active: boolean): Promise<boolean> {
+  const db = getFirebaseDb();
+  if (!db) return false;
+
+  const adminRef = doc(db, 'admins', adminId);
+  await setDoc(adminRef, { active, updatedAt: new Date().toISOString() }, { merge: true });
+  return true;
+}
+
+/**
+ * Remove an administrator from Firestore
+ */
+export async function deleteAdminProfile(adminId: string): Promise<boolean> {
+  const db = getFirebaseDb();
+  if (!db) return false;
+
+  try {
+    const adminRef = doc(db, 'admins', adminId);
+    await deleteDoc(adminRef);
+    return true;
+  } catch (err) {
+    console.warn('Could not delete admin from Firestore:', err);
+    return false;
+  }
 }
 
 /**

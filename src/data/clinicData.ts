@@ -111,24 +111,24 @@ export function notifyClinicDataChanged(): void {
   }
 }
 
-// Single cohesive light theme palette (#4987A4 fading into white)
+// Clean, cohesive medical theme palette (slate-50 background, crisp white cards)
 export function getThemePalette(_isDark?: boolean, _darkColor?: string) {
   return {
-    backdropClass: 'ocean-green-backdrop',
-    outerBg: 'bg-gradient-to-b from-[#4987A4] via-[#9bc2d4] to-white text-slate-800',
-    pageBg: 'bg-gradient-to-b from-[#4987A4] via-[#9bc2d4] to-white text-slate-800',
-    shellBg: 'bg-gradient-to-b from-[#4987A4] via-[#bcd7e4] to-white border-[#4987A4]/30 text-slate-800',
-    headerBg: 'bg-white/95 border-[#4987A4]/25 text-slate-800',
+    backdropClass: '',
+    outerBg: 'bg-slate-50 text-slate-800',
+    pageBg: 'bg-slate-50 text-slate-800',
+    shellBg: 'bg-white border-x border-slate-200 text-slate-800',
+    headerBg: 'bg-white/95 border-b border-slate-200 text-slate-800',
     cardBg: 'bg-white border-slate-200 text-slate-800',
     card: 'bg-white border-slate-200 text-slate-800',
-    softCardBg: 'bg-white/95 border-slate-200 text-slate-900',
-    cardAlt: 'bg-white/95 border-slate-200 text-slate-900',
-    subtleBg: 'bg-slate-50/90 border-slate-200 text-slate-900',
+    softCardBg: 'bg-slate-50 border-slate-200 text-slate-900',
+    cardAlt: 'bg-white border-slate-200 text-slate-900',
+    subtleBg: 'bg-slate-50 border-slate-200 text-slate-900',
     headingText: 'text-slate-900',
     heading: 'text-slate-900',
     subText: 'text-slate-600',
     subtext: 'text-slate-600',
-    mutedText: 'text-slate-500',
+    mutedText: 'text-slate-400',
     accentText: 'text-teal-700',
     primaryBtn: 'bg-teal-700 hover:bg-teal-800 text-white',
     secondaryBtn: 'bg-rose-600 hover:bg-rose-700 text-white',
@@ -136,8 +136,8 @@ export function getThemePalette(_isDark?: boolean, _darkColor?: string) {
     border: 'border-slate-200',
     divider: 'border-slate-200',
     input: 'bg-white border-slate-200 text-slate-900 placeholder:text-slate-400',
-    navBg: 'bg-white/95 border-[#4987A4]/25',
-    footerBg: 'border-slate-200 bg-white/90 text-slate-600',
+    navBg: 'bg-white/95 border-t border-slate-200',
+    footerBg: 'border-t border-slate-200 bg-white text-slate-600',
   };
 }
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Language, DoctorArrival, SpecialOffer } from '../types';
 import {
   Phone,
@@ -43,7 +43,58 @@ export const Header: React.FC<HeaderProps> = ({
 
   const theme = getThemePalette();
   const topOffers = specialOffers.slice(0, 2);
-  const totalNotifications = unannouncedArrivals.length + topOffers.length;
+
+  // Check if admin is currently authenticated to conditionally show admin indicator
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
+    return typeof window !== 'undefined' && sessionStorage.getItem('lifecare_admin_auth') === 'true';
+  });
+
+  useEffect(() => {
+    const checkAuth = () => {
+      setIsAdminAuthenticated(sessionStorage.getItem('lifecare_admin_auth') === 'true');
+    };
+    window.addEventListener('storage', checkAuth);
+    return () => window.removeEventListener('storage', checkAuth);
+  }, []);
+
+  // Compute unique keys for current notifications
+  const currentNotifKeys = React.useMemo(() => {
+    const keys: string[] = [];
+    unannouncedArrivals.forEach((a) => keys.push(`arr-${a.id}-${a.sentByAdminAt || ''}`));
+    topOffers.forEach((o) => keys.push(`off-${o.id}`));
+    return keys;
+  }, [unannouncedArrivals, topOffers]);
+
+  // Read notifications from localStorage
+  const [readNotifKeys, setReadNotifKeys] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem('lifecare_read_notif_keys');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Calculate unread count (only notifications user hasn't seen yet)
+  const unreadCount = React.useMemo(() => {
+    return currentNotifKeys.filter((k) => !readNotifKeys.includes(k)).length;
+  }, [currentNotifKeys, readNotifKeys]);
+
+  const handleOpenNotifications = () => {
+    const nextState = !notifOpen;
+    setNotifOpen(nextState);
+
+    // If opening drawer, mark all currently active notifications as read
+    if (nextState && unreadCount > 0) {
+      try {
+        const merged = Array.from(new Set([...readNotifKeys, ...currentNotifKeys]));
+        localStorage.setItem('lifecare_read_notif_keys', JSON.stringify(merged));
+        setReadNotifKeys(merged);
+      } catch {
+        // ignore
+      }
+    }
+  };
 
   // Close menus on tap/click anywhere outside
   React.useEffect(() => {
@@ -103,7 +154,7 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </div>
 
-          {/* Right actions: WhatsApp, Admin Icon, Notifications Bell & Call */}
+          {/* Right actions: WhatsApp, Admin Icon (only if logged in), Notifications Bell & Call */}
           <div className="flex items-center gap-1.5 sm:gap-2">
             {/* Direct WhatsApp Chat Button */}
             <a
@@ -120,34 +171,21 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="hidden xs:inline">WhatsApp</span>
             </a>
 
-            {/* Quick Admin Portal Button */}
-            <button
-              type="button"
-              onClick={() => onTabChange('admin')}
-              className={`flex items-center gap-1 text-xs font-bold px-2 py-1.5 rounded-lg transition-colors border cursor-pointer ${
-                activeTab === 'admin'
-                  ? 'bg-teal-700 text-white border-teal-700'
-                  : 'bg-white text-slate-700 hover:text-teal-800 border-slate-200 hover:bg-slate-50'
-              }`}
-              title="Admin Portal (Modify Clinic, Doctors, Products & Offers)"
-            >
-              <Lock className="w-3.5 h-3.5 text-teal-700" />
-              <span className="hidden sm:inline">Admin</span>
-            </button>
+
 
             {/* Notification Bell: Doctors Arriving Unannounced & Special Offers */}
             <div className="relative" ref={notifRef}>
               <button
                 type="button"
-                onClick={() => setNotifOpen(!notifOpen)}
+                onClick={handleOpenNotifications}
                 aria-label="Notifications"
                 className="relative p-2 rounded-xl shadow-2xs transition-all active:scale-95 cursor-pointer border bg-white text-slate-700 hover:text-teal-700 border-slate-200"
                 title="Notifications"
               >
                 <Bell className="w-4 h-4" />
-                {totalNotifications > 0 && (
+                {unreadCount > 0 && (
                   <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[9px] font-extrabold flex items-center justify-center shadow-xs animate-pulse bg-rose-500 text-white">
-                    {totalNotifications}
+                    {unreadCount}
                   </span>
                 )}
               </button>
@@ -426,37 +464,15 @@ export const Header: React.FC<HeaderProps> = ({
                   <span>🎁</span> Special Offers
                 </button>
 
-                {/* Admin Portal Nav Item (Prominent in Drawer) */}
-                <div className="pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onTabChange('admin');
-                      setDrawerOpen(false);
-                    }}
-                    className={`w-full text-left px-3 py-2.5 rounded-xl font-extrabold text-xs flex items-center justify-between transition-colors cursor-pointer border ${
-                      activeTab === 'admin'
-                        ? 'bg-teal-700 text-white border-teal-700 shadow-xs'
-                        : 'bg-teal-50/70 text-teal-800 border-teal-200/60 hover:bg-teal-100'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <Lock className="w-4 h-4 text-teal-700" />
-                      <span>Admin Management</span>
-                    </div>
-                    <span className="text-[10px] font-bold bg-teal-800 text-white px-1.5 py-0.5 rounded">
-                      Portal
-                    </span>
-                  </button>
-                </div>
               </div>
             </div>
 
+            {/* Hamburger Menu Footer */}
             <div className={`pt-4 border-t text-center space-y-1 ${theme.border}`}>
-              <p className={`text-xs font-bold ${theme.headingText}`}>
-                Life Care Medicine Store and Poly Clinic
+              <p className="text-[10px] text-slate-400 font-medium">
+                © 2026 Life Care Medicine Store and Poly Clinic • Baripada
               </p>
-              <p className={`text-[10px] ${theme.subText}`}>
+              <p className={`text-[9px] ${theme.subText}`}>
                 Hospital Square, Baripada • 8:00 AM - 10:00 PM
               </p>
             </div>

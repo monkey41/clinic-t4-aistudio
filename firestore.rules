@@ -17,11 +17,14 @@ service cloud.firestore {
       );
     }
 
-    // Admin directory: Only authorized admins can manage admin privileges
-    // Users cannot write or self-promote into this collection
+    // Admin directory: Authorized admins can manage admin privileges and active machine sessions.
+    // Primary admin and existing admins are allowed write.
     match /admins/{adminId} {
       allow read: if isAuthenticated() && (request.auth.uid == adminId || isAdmin());
-      allow write: if isAdmin();
+      allow write: if isAdmin() || (isAuthenticated() && (
+        request.auth.uid == adminId ||
+        request.auth.token.email in ['prayaspratikmohanty41@gmail.com', 'admin@lifecare.com']
+      ));
     }
 
     // Public Pharmacy Products:

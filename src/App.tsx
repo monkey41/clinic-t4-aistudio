@@ -30,21 +30,31 @@ import {
 } from 'lucide-react';
 import { fetchProductsFromFirestore } from './services/firebase';
 
+const resolveCurrentTab = (): 'home' | 'doctors' | 'store' | 'appointments' | 'offers' | 'admin' => {
+  if (typeof window === 'undefined') return 'home';
+  const hash = window.location.hash.toLowerCase().replace(/^#\/?/, '').trim();
+  if (['home', 'doctors', 'store', 'appointments', 'offers', 'admin'].includes(hash)) {
+    return hash as any;
+  }
+  const path = window.location.pathname.toLowerCase().replace(/^\//, '').trim();
+  if (['home', 'doctors', 'store', 'appointments', 'offers', 'admin'].includes(path)) {
+    return path as any;
+  }
+  try {
+    const stored = localStorage.getItem('lifecare_active_tab');
+    if (stored && ['home', 'doctors', 'store', 'appointments', 'offers', 'admin'].includes(stored)) {
+      return stored as any;
+    }
+  } catch {
+    // ignore
+  }
+  return 'home';
+};
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<
     'home' | 'doctors' | 'store' | 'appointments' | 'offers' | 'admin'
-  >(() => {
-    if (typeof window !== 'undefined') {
-      const path = window.location.pathname.toLowerCase();
-      const hash = window.location.hash.toLowerCase();
-      if (path === '/admin' || hash === '#admin') return 'admin';
-      if (path === '/store' || hash === '#store') return 'store';
-      if (path === '/doctors' || hash === '#doctors') return 'doctors';
-      if (path === '/appointments' || hash === '#appointments') return 'appointments';
-      if (path === '/offers' || hash === '#offers') return 'offers';
-    }
-    return 'home';
-  });
+  >(() => resolveCurrentTab());
 
   const [appointmentsSubTab, setAppointmentsSubTab] = useState<
     'calendar' | 'pathology'
@@ -85,28 +95,19 @@ export default function App() {
       });
   }, []);
 
-  // Handle URL history and browser back/forward buttons
+  // Handle URL history and browser back/forward/refresh buttons
   useEffect(() => {
     const handleLocationChange = () => {
-      const path = window.location.pathname.toLowerCase();
-      const hash = window.location.hash.toLowerCase();
-      if (path === '/admin' || hash === '#admin') {
-        setActiveTab('admin');
-      } else if (path === '/store' || hash === '#store') {
-        setActiveTab('store');
-      } else if (path === '/doctors' || hash === '#doctors') {
-        setActiveTab('doctors');
-      } else if (path === '/appointments' || hash === '#appointments') {
-        setActiveTab('appointments');
-      } else if (path === '/offers' || hash === '#offers') {
-        setActiveTab('offers');
-      } else {
-        setActiveTab('home');
-      }
+      const current = resolveCurrentTab();
+      setActiveTab(current);
     };
 
+    window.addEventListener('hashchange', handleLocationChange);
     window.addEventListener('popstate', handleLocationChange);
-    return () => window.removeEventListener('popstate', handleLocationChange);
+    return () => {
+      window.removeEventListener('hashchange', handleLocationChange);
+      window.removeEventListener('popstate', handleLocationChange);
+    };
   }, []);
 
   // Unified Tab Change Handler with URL synchronization
@@ -117,12 +118,22 @@ export default function App() {
       setAppointmentsSubTab('calendar');
     }
     setActiveTab(tab);
+    try {
+      localStorage.setItem('lifecare_active_tab', tab);
+    } catch {
+      // ignore
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
-    // Update browser URL
-    const targetPath = tab === 'home' ? '/' : `/${tab}`;
-    if (window.location.pathname !== targetPath) {
-      window.history.pushState({ tab }, '', targetPath);
+    // Update browser URL hash for 100% reliable refresh without server 404
+    const targetHash = tab === 'home' ? '' : `#${tab}`;
+    if (window.location.hash !== targetHash) {
+      if (tab === 'home') {
+        // Clear hash cleanly
+        window.history.pushState(null, '', window.location.pathname);
+      } else {
+        window.location.hash = targetHash;
+      }
     }
   };
 
@@ -134,11 +145,9 @@ export default function App() {
   const pathologyBookingUrl = clinicConfig.pathologyBookingUrl;
 
   return (
-    <div className={`relative min-h-screen transition-colors ${p.pageBg}`}>
-      <div className="ocean-green-backdrop" />
-
+    <div className="relative min-h-screen bg-slate-50 text-slate-800">
       <div
-        className={`max-w-xl mx-auto min-h-screen shadow-2xl flex flex-col justify-between relative transition-colors ${p.shellBg}`}
+        className="max-w-xl mx-auto min-h-screen shadow-lg flex flex-col justify-between relative bg-white border-x border-slate-200"
       >
         {/* Sticky Header with Notifications & Left Menu */}
         <Header
@@ -451,19 +460,7 @@ export default function App() {
           )}
         </main>
 
-        {/* Footer (Hide when in admin mode for clean view) */}
-        {activeTab !== 'admin' && (
-          <footer
-            className={`px-4 py-6 border-t text-center text-[11px] mb-16 transition-colors ${p.footerBg}`}
-          >
-            <p className={p.subtext}>
-              {t.footer || '© 2026 Life Care Medicine Store and Poly Clinic • Baripada'}
-            </p>
-            <p className={`text-[10px] mt-1 ${p.mutedText}`}>
-              WhatsApp & Help Desk: {clinicConfig.phone} • {clinicConfig.address}
-            </p>
-          </footer>
-        )}
+
 
         {/* Bottom Navigation Bar */}
         {activeTab !== 'admin' && (

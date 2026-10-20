@@ -65,6 +65,13 @@ import {
   LogOut,
   Database,
   Copy,
+  ShieldCheck,
+  Laptop,
+  Monitor,
+  Smartphone,
+  UserPlus,
+  Power,
+  RefreshCw,
 } from 'lucide-react';
 import {
   getFirebaseAuth,
@@ -75,6 +82,13 @@ import {
   syncProductToFirestore,
   syncAllProductsToFirestore,
   deleteProductFromFirestore,
+  registerAdminSession,
+  listenToAdminSession,
+  fetchAllAdmins,
+  saveAdminProfile,
+  toggleAdminStatus,
+  deleteAdminProfile,
+  AdminProfile,
 } from '../services/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 
@@ -90,7 +104,8 @@ type AdminTab =
   | 'products'
   | 'pathology'
   | 'settings'
-  | 'logs';
+  | 'logs'
+  | 'admins';
 
 export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
   // Authentication & Authorization State
@@ -107,8 +122,23 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
   const [passwordInput, setPasswordInput] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [authError, setAuthError] = useState<string>('');
+  const [sessionWarning, setSessionWarning] = useState<string | null>(null);
   const [firebaseActive, setFirebaseActive] = useState<boolean>(false);
   const [testingFirebase, setTestingFirebase] = useState<boolean>(false);
+
+  // Single-machine session tracking
+  const [activeSessionId, setActiveSessionId] = useState<string>(() => {
+    return sessionStorage.getItem('lifecare_admin_session_id') || '';
+  });
+
+  // Admin Team Management State
+  const [adminList, setAdminList] = useState<AdminProfile[]>([]);
+  const [loadingAdmins, setLoadingAdmins] = useState<boolean>(false);
+  const [adminModalOpen, setAdminModalOpen] = useState<boolean>(false);
+  const [newAdminName, setNewAdminName] = useState<string>('');
+  const [newAdminEmail, setNewAdminEmail] = useState<string>('');
+  const [newAdminRole, setNewAdminRole] = useState<'Super Admin' | 'Clinic Admin' | 'Store Admin' | 'Staff'>('Clinic Admin');
+  const [isSavingAdmin, setIsSavingAdmin] = useState<boolean>(false);
 
   // Active Admin Sub-Tab
   const [activeTab, setActiveTab] = useState<AdminTab>('doctors');
@@ -149,13 +179,33 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
     return () => window.removeEventListener('clinic-data-updated', handleUpdate);
   }, []);
 
-  // Listen for Firebase Auth state changes
+  // Fetch admin team directory
+  const loadAdmins = async () => {
+    setLoadingAdmins(true);
+    try {
+      const list = await fetchAllAdmins();
+      setAdminList(list);
+    } catch (err) {
+      console.warn('Could not load admins list:', err);
+    } finally {
+      setLoadingAdmins(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadAdmins();
+    }
+  }, [isAuthenticated]);
+
+  // Listen for Firebase Auth state changes & restore session without reload errors
   useEffect(() => {
     const configured = isFirebaseConfigured();
     setFirebaseActive(configured);
     const auth = getFirebaseAuth();
 
     if (!auth) {
+      // In local demo or offline mode, preserve session if previously logged in
       setAuthChecking(false);
       return;
     }
@@ -171,6 +221,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
           sessionStorage.setItem('lifecare_admin_auth', 'true');
           sessionStorage.setItem('lifecare_admin_email', user.email || '');
           setAuthError('');
+
+          // Register or maintain active machine session
+          let currentSessionId = sessionStorage.getItem('lifecare_admin_session_id');
+          if (!currentSessionId) {
+            currentSessionId = await registerAdminSession(user, user.displayName || undefined);
+            setActiveSessionId(currentSessionId);
+          }
         } else {
           // User is authenticated, but not an admin! Deny access and sign out.
           await adminSignOut();
@@ -179,15 +236,16 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
           sessionStorage.removeItem('lifecare_admin_auth');
           sessionStorage.removeItem('lifecare_admin_email');
           setAuthError(
-            `Access Denied: The account "${user.email}" is authenticated, but lacks administrator authorization. Only authorized clinic admins can access the admin portal.`
+            `Access Denied: The account "${user.email}" lacks administrator authorization. Only authorized clinic admins can access the admin portal.`
           );
         }
       } else {
-        setAdminUser(null);
-        // Do not force logout if in local dev session without Firebase
-        if (configured) {
+        // Firebase returned null user.
+        // If we had a local valid session, give Firebase a moment or verify if signed out intentionally
+        const hasSession = sessionStorage.getItem('lifecare_admin_auth') === 'true';
+        if (!hasSession && configured) {
+          setAdminUser(null);
           setIsAuthenticated(false);
-          sessionStorage.removeItem('lifecare_admin_auth');
         }
       }
       setAuthChecking(false);
@@ -196,10 +254,31 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
     return () => unsubscribe();
   }, []);
 
+  // Real-time single-machine listener: Revoke immediately if another machine logs in
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const uid = adminUser?.uid || 'primary-admin';
+    const localSess = activeSessionId || sessionStorage.getItem('lifecare_admin_session_id') || '';
+    if (!localSess) return;
+
+    const cleanup = listenToAdminSession(uid, localSess, (reason) => {
+      setSessionWarning(reason);
+      setAuthError(reason);
+      setIsAuthenticated(false);
+      sessionStorage.removeItem('lifecare_admin_auth');
+      sessionStorage.removeItem('lifecare_admin_session_id');
+    });
+
+    return () => {
+      cleanup();
+    };
+  }, [isAuthenticated, adminUser?.uid, activeSessionId]);
+
   // Handle Login with Email & Password
   const handleLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setAuthError('');
+    setSessionWarning(null);
 
     if (!emailInput.trim()) {
       setAuthError('Please enter your admin email address.');
@@ -220,7 +299,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
           setIsAuthenticated(true);
           sessionStorage.setItem('lifecare_admin_auth', 'true');
           sessionStorage.setItem('lifecare_admin_email', result.user.email || '');
-          showToast('Logged in as verified administrator!');
+
+          // Enforce single-machine session
+          const newSessId = await registerAdminSession(result.user);
+          setActiveSessionId(newSessId);
+          showToast('Logged in as verified administrator (Single machine lock active)');
         } else {
           setAuthError(result.error || 'Invalid credentials or unauthorized account.');
         }
@@ -231,13 +314,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
           'prayaspratikmohanty41@gmail.com',
           'admin@lifecare.com',
           'admin@lifecarepharmacy.com',
+          ...adminList.map((a) => a.email.toLowerCase()),
         ];
         if (allowedAdmins.includes(normalized) && passwordInput.length >= 6) {
           setIsAuthenticated(true);
           setAdminEmail(emailInput.trim());
           sessionStorage.setItem('lifecare_admin_auth', 'true');
           sessionStorage.setItem('lifecare_admin_email', emailInput.trim());
-          showToast('Admin session active. Deploy VITE_FIREBASE_* for production.');
+          const fallbackSess = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+          sessionStorage.setItem('lifecare_admin_session_id', fallbackSess);
+          localStorage.setItem('lifecare_admin_session_id', fallbackSess);
+          setActiveSessionId(fallbackSess);
+          showToast('Admin session active. Single-session lock engaged.');
         } else {
           setAuthError(
             'Unauthorized: Only designated admin accounts (e.g. prayaspratikmohanty41@gmail.com) with 6+ character passwords can sign in.'
@@ -251,6 +339,99 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
     }
   };
 
+  // Add new administrator
+  const handleSaveNewAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAdminEmail.trim()) {
+      showToast('Admin email is required');
+      return;
+    }
+    setIsSavingAdmin(true);
+    try {
+      const success = await saveAdminProfile({
+        name: newAdminName.trim() || 'Clinic Administrator',
+        email: newAdminEmail.trim().toLowerCase(),
+        role: newAdminRole,
+        active: true,
+        createdAt: new Date().toISOString(),
+      });
+      if (success) {
+        showToast(`Admin ${newAdminEmail.trim()} authorized successfully!`);
+        setAdminModalOpen(false);
+        setNewAdminName('');
+        setNewAdminEmail('');
+        await loadAdmins();
+      } else {
+        // Add to local admin list if offline
+        setAdminList((prev) => [
+          ...prev,
+          {
+            id: 'admin_' + Date.now(),
+            name: newAdminName.trim() || 'Clinic Administrator',
+            email: newAdminEmail.trim().toLowerCase(),
+            role: newAdminRole,
+            active: true,
+            createdAt: new Date().toISOString(),
+          },
+        ]);
+        setAdminModalOpen(false);
+        setNewAdminName('');
+        setNewAdminEmail('');
+        showToast('Admin added locally! Will sync to Firestore.');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to authorize admin');
+    } finally {
+      setIsSavingAdmin(false);
+    }
+  };
+
+  // Toggle admin active/deactivated
+  const handleToggleAdmin = async (admin: AdminProfile) => {
+    if (admin.email.toLowerCase() === 'prayaspratikmohanty41@gmail.com') {
+      showToast('The primary administrator cannot be deactivated.');
+      return;
+    }
+    const nextStatus = !admin.active;
+    await toggleAdminStatus(admin.id, nextStatus);
+    showToast(`Admin ${admin.name} is now ${nextStatus ? 'Active' : 'Deactivated'}.`);
+    await loadAdmins();
+  };
+
+  // Force Revoke Machine Session
+  const handleRevokeMachineSession = async (admin: AdminProfile) => {
+    if (
+      window.confirm(
+        `Force terminate active machine session for ${admin.name} (${admin.email})? They will be immediately signed out on their machine.`
+      )
+    ) {
+      await saveAdminProfile({
+        id: admin.id,
+        email: admin.email,
+        activeSessionId: 'revoked_' + Date.now(),
+      });
+      showToast(`Machine session revoked for ${admin.name}.`);
+      await loadAdmins();
+    }
+  };
+
+  // Delete an administrator
+  const handleDeleteAdmin = async (admin: AdminProfile) => {
+    if (admin.email.toLowerCase() === 'prayaspratikmohanty41@gmail.com') {
+      showToast('The primary administrator cannot be removed.');
+      return;
+    }
+    if (
+      window.confirm(
+        `Are you sure you want to revoke admin privileges for ${admin.name} (${admin.email})?`
+      )
+    ) {
+      await deleteAdminProfile(admin.id);
+      showToast(`Admin privileges revoked for ${admin.email}`);
+      await loadAdmins();
+    }
+  };
+
   const handleLogout = async () => {
     try {
       await adminSignOut();
@@ -259,11 +440,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
     }
     setIsAuthenticated(false);
     setAdminUser(null);
+    setActiveSessionId('');
     sessionStorage.removeItem('lifecare_admin_auth');
+    sessionStorage.removeItem('lifecare_admin_session_id');
+    localStorage.removeItem('lifecare_admin_session_id');
     sessionStorage.removeItem('lifecare_admin_email');
     setEmailInput('');
     setPasswordInput('');
-    showToast('Logged out of admin session successfully.');
+    showToast('Signed out of Admin Portal.');
   };
 
   // ----------------------------------------------------------------------
@@ -1057,6 +1241,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
             <History className="w-3.5 h-3.5" />
             <span>Logs ({bookingHistory.length})</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('admins')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              activeTab === 'admins'
+                ? 'bg-teal-700 text-white shadow-xs'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>Admins & Security ({adminList.length})</span>
+          </button>
         </div>
       </div>
 
@@ -1810,6 +2007,221 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
             )}
           </div>
         )}
+
+        {/* ================================================================ */}
+        {/* TAB 8: ADMINS & SINGLE-MACHINE SECURITY                           */}
+        {/* ================================================================ */}
+        {activeTab === 'admins' && (
+          <div className="space-y-4 animate-in fade-in">
+            {/* Header with Title and Add Button */}
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <h3 className="font-extrabold text-base text-slate-900 flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-teal-700" />
+                  <span>Admin Team & Single-Machine Lock</span>
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Manage administrator accounts, roles, and enforce one-machine-at-a-time security.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={loadAdmins}
+                  disabled={loadingAdmins}
+                  className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                  title="Refresh admins list"
+                >
+                  <RefreshCw className={`w-4 h-4 ${loadingAdmins ? 'animate-spin text-teal-700' : ''}`} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdminModalOpen(true)}
+                  className="py-2 px-3 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-extrabold text-xs shadow-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  <span>Add Admin</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Single-Machine Lock Enforced Banner */}
+            <div className="bg-teal-50 border border-teal-200 rounded-2xl p-4 space-y-2">
+              <div className="flex items-start gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-teal-700 text-white flex items-center justify-center shrink-0">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-black text-teal-950">
+                    Single-Machine Session Protection Active
+                  </h4>
+                  <p className="text-[11px] text-teal-800 leading-relaxed mt-0.5">
+                    For strict security, an admin account can only be actively logged in on <strong>one machine or browser at any given time</strong>. If an administrator signs in from another computer, phone, or browser, the previous session is immediately disconnected in real-time.
+                  </p>
+                </div>
+              </div>
+              <div className="pt-2 border-t border-teal-100 flex items-center justify-between text-[11px] font-semibold text-teal-900">
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                  <span>Current Device Session: Active</span>
+                </span>
+                <span className="font-mono text-[10px] text-teal-700 bg-teal-100 px-2 py-0.5 rounded-md">
+                  {activeSessionId ? activeSessionId.substring(0, 16) + '...' : 'Local Secure Lock'}
+                </span>
+              </div>
+            </div>
+
+            {/* Admin Directory List */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-500 px-1">
+                <span>Authorized Administrators ({adminList.length})</span>
+                <span>Role & Device Session</span>
+              </div>
+
+              {adminList.map((admin) => {
+                const isPrimary = admin.email.toLowerCase() === 'prayaspratikmohanty41@gmail.com';
+                const isCurrentLogged = admin.email.toLowerCase() === (adminEmail || '').toLowerCase();
+
+                return (
+                  <div
+                    key={admin.id}
+                    className={`bg-white rounded-2xl p-4 border transition-all ${
+                      !admin.active
+                        ? 'border-slate-200 opacity-60 bg-slate-50'
+                        : isCurrentLogged
+                        ? 'border-teal-300 shadow-sm ring-1 ring-teal-200'
+                        : 'border-slate-200 shadow-xs'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div
+                          className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs shrink-0 ${
+                            isPrimary
+                              ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                              : 'bg-teal-100 text-teal-800 border border-teal-200'
+                          }`}
+                        >
+                          {isPrimary ? '👑' : '👨‍💼'}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-extrabold text-sm text-slate-900 truncate">
+                              {admin.name}
+                            </h4>
+                            <span
+                              className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                                admin.role === 'Super Admin'
+                                  ? 'bg-purple-100 text-purple-800'
+                                  : admin.role === 'Store Admin'
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : 'bg-teal-100 text-teal-800'
+                              }`}
+                            >
+                              {admin.role}
+                            </span>
+                            {isPrimary && (
+                              <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded">
+                                Primary Owner
+                              </span>
+                            )}
+                            {isCurrentLogged && (
+                              <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded">
+                                You (This Device)
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-600 font-mono mt-0.5 truncate">
+                            {admin.email}
+                          </p>
+
+                          {/* Machine / Device status */}
+                          <div className="mt-2 text-[11px] text-slate-500 flex items-center gap-2 flex-wrap">
+                            {admin.activeSessionId ? (
+                              <span className="flex items-center gap-1 text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                                <Laptop className="w-3.5 h-3.5" />
+                                <span>1 Machine Logged In</span>
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1 text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md">
+                                <Monitor className="w-3.5 h-3.5" />
+                                <span>No Active Session</span>
+                              </span>
+                            )}
+
+                            {admin.lastActiveAt && (
+                              <span className="text-[10px] text-slate-400">
+                                Last active: {new Date(admin.lastActiveAt).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Controls */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        {/* Revoke Session button */}
+                        {admin.activeSessionId && (
+                          <button
+                            type="button"
+                            onClick={() => handleRevokeMachineSession(admin)}
+                            className="p-1.5 rounded-lg border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors cursor-pointer"
+                            title="Force terminate active session on their machine"
+                          >
+                            <Power className="w-4 h-4" />
+                          </button>
+                        )}
+
+                        {/* Toggle Active status */}
+                        {!isPrimary && (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleAdmin(admin)}
+                            className={`p-1.5 rounded-lg border transition-colors cursor-pointer text-xs font-bold ${
+                              admin.active
+                                ? 'border-slate-200 text-slate-600 hover:bg-slate-100'
+                                : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                            }`}
+                            title={admin.active ? 'Deactivate this admin' : 'Reactivate this admin'}
+                          >
+                            {admin.active ? 'Disable' : 'Enable'}
+                          </button>
+                        )}
+
+                        {/* Delete Admin */}
+                        {!isPrimary && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteAdmin(admin)}
+                            className="p-1.5 rounded-lg border border-rose-200 text-rose-600 bg-rose-50 hover:bg-rose-100 transition-colors cursor-pointer"
+                            title="Remove admin privileges"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* How to add new admins info */}
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-1.5 text-xs text-slate-600">
+              <h5 className="font-extrabold text-slate-800 flex items-center gap-1.5">
+                <span>💡 Adding Admins in Future</span>
+              </h5>
+              <p className="leading-relaxed text-[11px]">
+                To authorize a new staff member or doctor as an admin:
+              </p>
+              <ol className="list-decimal list-inside space-y-1 text-[11px] text-slate-500 pl-1">
+                <li>Click <strong>Add Admin</strong> and enter their official email address.</li>
+                <li>Assign their role (Super Admin, Clinic Admin, Store Admin, or Staff).</li>
+                <li>When they sign into the portal using Firebase Auth, their account is granted access with the single-machine lock enforced.</li>
+              </ol>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ================================================================== */}
@@ -2470,6 +2882,119 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
                   className="px-4 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-extrabold shadow-xs cursor-pointer"
                 >
                   Save Test
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================== */}
+      {/* MODAL: ADD NEW ADMINISTRATOR                                       */}
+      {/* ================================================================== */}
+      {adminModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-teal-100 text-teal-800 flex items-center justify-center font-bold">
+                  <UserPlus className="w-4 h-4" />
+                </div>
+                <h3 className="font-black text-base text-slate-900">
+                  Authorize New Administrator
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAdminModalOpen(false)}
+                className="p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5 text-slate-500" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveNewAdmin} className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Full Name / Designation
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Dr. Pratik Mohanty / Manager"
+                  value={newAdminName}
+                  onChange={(e) => setNewAdminName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-teal-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Admin Email Address
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="e.g. staff.admin@lifecare.com"
+                  value={newAdminEmail}
+                  onChange={(e) => setNewAdminEmail(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-teal-600"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Must match the Firebase Auth account email used for sign in.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Administrator Role & Privileges
+                </label>
+                <select
+                  value={newAdminRole}
+                  onChange={(e) => setNewAdminRole(e.target.value as any)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-teal-600"
+                >
+                  <option value="Clinic Admin">Clinic Admin (Doctors, Arrivals & Offers)</option>
+                  <option value="Store Admin">Store Admin (Products & Inventory)</option>
+                  <option value="Super Admin">Super Admin (Full Access & User Management)</option>
+                  <option value="Staff">Staff (View & Basic Operations)</option>
+                </select>
+              </div>
+
+              <div className="p-3 rounded-xl bg-teal-50 border border-teal-200 text-teal-800 text-[11px] space-y-1">
+                <span className="font-bold flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Single-Machine Enforcement Applied:</span>
+                </span>
+                <p className="leading-relaxed">
+                  Once authorized, this admin can sign into the Admin Portal. The 1-active-machine rule will automatically apply to their account as well.
+                </p>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAdminModalOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingAdmin}
+                  className="px-4 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white text-xs font-extrabold shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  {isSavingAdmin ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Authorize Admin</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>
