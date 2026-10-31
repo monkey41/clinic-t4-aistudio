@@ -3,6 +3,7 @@ import {
   Doctor,
   Product,
   DoctorArrival,
+  ClinicNotification,
   SpecialOffer,
   PathologyTest,
   ClinicConfig,
@@ -26,6 +27,8 @@ import {
   getUnannouncedArrivals,
   saveUnannouncedArrivals,
   DEFAULT_UNANNOUNCED_ARRIVALS,
+  getClinicNotifications,
+  saveClinicNotifications,
   getClinicConfig,
   saveClinicConfig,
   DEFAULT_CLINIC_CONFIG,
@@ -72,6 +75,9 @@ import {
   UserPlus,
   Power,
   RefreshCw,
+  Megaphone,
+  Radio,
+  Send,
 } from 'lucide-react';
 import {
   getFirebaseAuth,
@@ -89,6 +95,10 @@ import {
   toggleAdminStatus,
   deleteAdminProfile,
   AdminProfile,
+  syncNotificationToFirestore,
+  deleteNotificationFromFirestore,
+  syncArrivalToFirestore,
+  deleteArrivalFromFirestore,
 } from '../services/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 
@@ -145,6 +155,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
   const [unannouncedArrivals, setUnannouncedArrivals] = useState<DoctorArrival[]>(() =>
     getUnannouncedArrivals()
   );
+  const [notifications, setNotifications] = useState<ClinicNotification[]>(() =>
+    getClinicNotifications()
+  );
   const [pathologyTests, setPathologyTests] = useState<PathologyTest[]>(() => getPathologyTests());
   const [clinicConfig, setClinicConfig] = useState<ClinicConfig>(() => getClinicConfig());
   const [bookingHistory, setBookingHistory] = useState<BookingHistoryItem[]>(() => getBookingHistory());
@@ -163,6 +176,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
     setProducts(getProducts());
     setSpecialOffers(getSpecialOffers());
     setUnannouncedArrivals(getUnannouncedArrivals());
+    setNotifications(getClinicNotifications());
     setPathologyTests(getPathologyTests());
     setClinicConfig(getClinicConfig());
     setBookingHistory(getBookingHistory());
@@ -523,7 +537,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
   // ----------------------------------------------------------------------
   // Doctor Arrival Alerts
   // ----------------------------------------------------------------------
+  // ----------------------------------------------------------------------
+  // Doctor Arrival Alerts (Syncs with Cloud Firestore & Customer Phones)
+  // ----------------------------------------------------------------------
   const [arrivalModalOpen, setArrivalModalOpen] = useState(false);
+  const [isSavingArrival, setIsSavingArrival] = useState(false);
   const [arrivalForm, setArrivalForm] = useState<Partial<DoctorArrival>>({
     doctorId: '',
     doctorName: '',
@@ -566,10 +584,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
     }
   };
 
-  const handleSaveArrival = (e: React.FormEvent) => {
+  const handleSaveArrival = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!arrivalForm.doctorName) return;
 
+    setIsSavingArrival(true);
     const dateStr = arrivalForm.date || new Date().toISOString().split('T')[0];
     const day = parseInt(dateStr.split('-')[2] || '1', 10);
 
@@ -591,15 +610,113 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
     const updated = [newArrival, ...unannouncedArrivals];
     setUnannouncedArrivals(updated);
     saveUnannouncedArrivals(updated);
-    setArrivalModalOpen(false);
-    showToast('Doctor arrival alert published to patient notification bell!');
+
+    try {
+      await syncArrivalToFirestore(newArrival);
+      showToast('Doctor arrival alert synced live to customer phones!');
+    } catch (err) {
+      console.warn('Arrival Firestore sync error:', err);
+      showToast('Arrival alert saved locally.');
+    } finally {
+      setIsSavingArrival(false);
+      setArrivalModalOpen(false);
+    }
   };
 
-  const handleDeleteArrival = (id: string) => {
+  const handleDeleteArrival = async (id: string) => {
     const updated = unannouncedArrivals.filter((a) => a.id !== id);
     setUnannouncedArrivals(updated);
     saveUnannouncedArrivals(updated);
-    showToast('Alert removed.');
+    try {
+      await deleteArrivalFromFirestore(id);
+      showToast('Alert removed from all devices.');
+    } catch (err) {
+      console.warn('Arrival Firestore delete error:', err);
+      showToast('Alert removed locally.');
+    }
+  };
+
+  // ----------------------------------------------------------------------
+  // General Clinic Broadcast Notifications (Normal Customer Announcements)
+  // ----------------------------------------------------------------------
+  const [notifModalOpen, setNotifModalOpen] = useState(false);
+  const [isBroadcasting, setIsBroadcasting] = useState(false);
+  const [notifForm, setNotifForm] = useState<Partial<ClinicNotification>>({
+    title: '',
+    message: '',
+    type: 'general',
+    category: 'Clinic Announcement',
+    badge: 'Notice',
+    actionLabel: 'View Details',
+    actionUrl: 'store',
+  });
+
+  const handleOpenAddBroadcastNotice = () => {
+    setNotifForm({
+      title: '',
+      message: '',
+      type: 'general',
+      category: 'Clinic Announcement',
+      badge: 'Notice',
+      actionLabel: 'View Details',
+      actionUrl: 'home',
+    });
+    setNotifModalOpen(true);
+  };
+
+  const handleSaveBroadcastNotice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!notifForm.title || !notifForm.message) return;
+
+    setIsBroadcasting(true);
+    const now = new Date();
+    const timeFormatted = now.toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+
+    const newNotice: ClinicNotification = {
+      id: `notif-${Date.now()}`,
+      title: notifForm.title.trim(),
+      message: notifForm.message.trim(),
+      type: notifForm.type || 'general',
+      category: notifForm.category || 'Clinic Announcement',
+      badge: notifForm.badge || 'Notice',
+      actionLabel: notifForm.actionLabel?.trim() || undefined,
+      actionUrl: notifForm.actionUrl || undefined,
+      active: true,
+      createdAt: now.toISOString(),
+      sentByAdminAt: `${timeFormatted}, Today`,
+    };
+
+    const updated = [newNotice, ...notifications];
+    setNotifications(updated);
+    saveClinicNotifications(updated);
+
+    try {
+      await syncNotificationToFirestore(newNotice);
+      showToast('📢 Broadcast notice sent! Reflecting immediately on customer phones.');
+    } catch (err) {
+      console.warn('Notification Firestore sync error:', err);
+      showToast('Notice saved locally and will sync when online.');
+    } finally {
+      setIsBroadcasting(false);
+      setNotifModalOpen(false);
+    }
+  };
+
+  const handleDeleteBroadcastNotice = async (id: string) => {
+    const updated = notifications.filter((n) => n.id !== id);
+    setNotifications(updated);
+    saveClinicNotifications(updated);
+    try {
+      await deleteNotificationFromFirestore(id);
+      showToast('Notice revoked from customer phones.');
+    } catch (err) {
+      console.warn('Notification Firestore delete error:', err);
+      showToast('Notice removed locally.');
+    }
   };
 
   // ----------------------------------------------------------------------
@@ -1180,7 +1297,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
             }`}
           >
             <Bell className="w-3.5 h-3.5" />
-            <span>Arrivals & Bell ({unannouncedArrivals.length})</span>
+            <span>Notifications ({notifications.length + unannouncedArrivals.length})</span>
           </button>
 
           <button
@@ -1345,84 +1462,206 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
         )}
 
         {/* ================================================================ */}
-        {/* TAB 2: UNANNOUNCED ARRIVALS & NOTIFICATION BELL ALERTS           */}
+        {/* ================================================================ */}
+        {/* TAB 2: NOTIFICATIONS, BROADCASTS & ARRIVALS                      */}
         {/* ================================================================ */}
         {activeTab === 'arrivals' && (
-          <div className="space-y-4 animate-in fade-in">
-            <div className="flex items-center justify-between">
+          <div className="space-y-6 animate-in fade-in">
+            {/* Header with Dual Actions */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-teal-50/80 to-slate-50 p-4 rounded-2xl border border-teal-100 shadow-2xs">
               <div>
-                <h3 className="font-extrabold text-base text-slate-900">
-                  Doctor Arrivals & Bell Alerts
+                <h3 className="font-extrabold text-base text-slate-900 flex items-center gap-2">
+                  <Megaphone className="w-5 h-5 text-teal-700" />
+                  <span>Customer Notifications & Broadcasts</span>
                 </h3>
-                <p className="text-xs text-slate-500">
-                  Triggers notification count badge on the patient header bell.
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Send normal announcements or doctor arrival alerts. Synced live across all customer phones!
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={handleOpenAddArrival}
-                className="py-2 px-3 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-extrabold text-xs shadow-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Post Arrival Alert</span>
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleOpenAddBroadcastNotice}
+                  className="py-2 px-3 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-extrabold text-xs shadow-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Send Broadcast Notice</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenAddArrival}
+                  className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-extrabold text-xs shadow-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Doctor Visit Alert</span>
+                </button>
+              </div>
             </div>
 
-            {unannouncedArrivals.length === 0 ? (
-              <div className="bg-white rounded-2xl p-6 text-center border border-slate-200 text-slate-500 text-xs">
-                No active unannounced doctor visits at the moment.
+            {/* SECTION 1: BROADCAST NOTICES TO CUSTOMERS (NORMAL NOTIFICATIONS) */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-black text-slate-900">
+                    📢 Active Broadcast Notices ({notifications.length})
+                  </span>
+                  <span className="text-[10px] font-bold bg-teal-100 text-teal-800 px-2 py-0.5 rounded-full">
+                    Cloud Synced
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleOpenAddBroadcastNotice}
+                  className="text-xs font-bold text-teal-700 hover:text-teal-900 flex items-center gap-1 cursor-pointer"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>New Notice</span>
+                </button>
               </div>
-            ) : (
-              <div className="space-y-3">
-                {unannouncedArrivals.map((arrival) => (
-                  <div
-                    key={arrival.id}
-                    className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex items-start justify-between gap-3"
-                  >
-                    <div className="flex items-start gap-3 min-w-0">
-                      <img
-                        src={arrival.photo}
-                        alt={arrival.doctorName}
-                        className="w-12 h-12 rounded-xl object-cover object-top border border-slate-200 bg-slate-50 shrink-0"
-                      />
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-extrabold bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded">
-                            {arrival.sentByAdminAt || 'Alert'}
+
+              {notifications.length === 0 ? (
+                <div className="bg-white rounded-2xl p-6 text-center border border-slate-200 text-slate-500 text-xs space-y-2">
+                  <p className="font-semibold text-slate-600">No broadcast notices active right now.</p>
+                  <p className="text-[11px] text-slate-400">
+                    Click "Send Broadcast Notice" to announce health camps, holiday timings, discounts, or medicine updates.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {notifications.map((notif) => (
+                    <div
+                      key={notif.id}
+                      className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex items-start justify-between gap-3 hover:border-teal-200 transition-colors"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span
+                            className={`text-[9px] font-extrabold px-2 py-0.5 rounded-md ${
+                              notif.type === 'alert' || notif.type === 'urgent'
+                                ? 'bg-rose-100 text-rose-800'
+                                : notif.type === 'offer'
+                                ? 'bg-amber-100 text-amber-900'
+                                : 'bg-teal-100 text-teal-800'
+                            }`}
+                          >
+                            {notif.badge || notif.category || 'Announcement'}
                           </span>
-                          <span className="text-xs font-semibold text-slate-500">
-                            Date: {arrival.date}
+                          <span className="text-[11px] font-bold text-slate-500">
+                            {notif.category}
+                          </span>
+                          <span className="text-[10px] font-medium text-slate-400 ml-auto">
+                            {notif.sentByAdminAt || 'Active'}
                           </span>
                         </div>
-                        <h4 className="font-extrabold text-sm text-slate-900 truncate mt-1">
-                          {arrival.doctorName}
+
+                        <h4 className="font-black text-sm text-slate-900 leading-snug">
+                          {notif.title}
                         </h4>
-                        <p className="text-xs font-semibold text-teal-700 truncate">
-                          {arrival.specialty}
+                        <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                          {notif.message}
                         </p>
-                        <p className="text-[11px] text-slate-600 font-medium mt-0.5">
-                          🕒 {arrival.timing}
-                        </p>
-                        {arrival.note && (
-                          <p className="text-[11px] text-slate-500 mt-1 bg-slate-50 p-1.5 rounded-lg border border-slate-100">
-                            {arrival.note}
-                          </p>
+
+                        {notif.actionLabel && (
+                          <div className="mt-2 flex items-center gap-2 text-[10px] font-bold text-teal-700 bg-teal-50 px-2.5 py-1 rounded-lg w-fit border border-teal-100">
+                            <span>Button: {notif.actionLabel}</span>
+                            {notif.actionUrl && (
+                              <span className="text-slate-400 font-normal">({notif.actionUrl})</span>
+                            )}
+                          </div>
                         )}
                       </div>
-                    </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteArrival(arrival.id)}
-                      className="p-2 rounded-xl text-slate-500 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 transition-colors cursor-pointer shrink-0"
-                      title="Remove Alert"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteBroadcastNotice(notif.id)}
+                        className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 transition-colors cursor-pointer shrink-0"
+                        title="Delete Notice from all customer phones"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* SECTION 2: DOCTORS ARRIVING UNANNOUNCED */}
+            <div className="space-y-3 pt-2 border-t border-slate-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-black text-slate-900">
+                    👨‍⚕️ Doctor Arrival Alerts ({unannouncedArrivals.length})
+                  </span>
+                  <span className="text-[10px] font-bold bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full">
+                    Bell Badge
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleOpenAddArrival}
+                  className="text-xs font-bold text-slate-700 hover:text-slate-900 flex items-center gap-1 cursor-pointer"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Post Arrival</span>
+                </button>
               </div>
-            )}
+
+              {unannouncedArrivals.length === 0 ? (
+                <div className="bg-white rounded-2xl p-6 text-center border border-slate-200 text-slate-500 text-xs">
+                  No active unannounced doctor visits at the moment.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {unannouncedArrivals.map((arrival) => (
+                    <div
+                      key={arrival.id}
+                      className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex items-start justify-between gap-3"
+                    >
+                      <div className="flex items-start gap-3 min-w-0">
+                        <img
+                          src={arrival.photo}
+                          alt={arrival.doctorName}
+                          className="w-12 h-12 rounded-xl object-cover object-top border border-slate-200 bg-slate-50 shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-extrabold bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded">
+                              {arrival.sentByAdminAt || 'Alert'}
+                            </span>
+                            <span className="text-xs font-semibold text-slate-500">
+                              Date: {arrival.date}
+                            </span>
+                          </div>
+                          <h4 className="font-extrabold text-sm text-slate-900 truncate mt-1">
+                            {arrival.doctorName}
+                          </h4>
+                          <p className="text-xs font-semibold text-teal-700 truncate">
+                            {arrival.specialty}
+                          </p>
+                          <p className="text-[11px] text-slate-600 font-medium mt-0.5">
+                            🕒 {arrival.timing}
+                          </p>
+                          {arrival.note && (
+                            <p className="text-[11px] text-slate-500 mt-1 bg-slate-50 p-1.5 rounded-lg border border-slate-100">
+                              {arrival.note}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteArrival(arrival.id)}
+                        className="p-2 rounded-xl text-slate-500 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 transition-colors cursor-pointer shrink-0"
+                        title="Remove Alert"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -2500,6 +2739,182 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
                 >
                   <Bell className="w-3.5 h-3.5" />
                   <span>Send Notification</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================== */}
+      {/* MODAL: BROADCAST NORMAL NOTIFICATION / ANNOUNCEMENT                */}
+      {/* ================================================================== */}
+      {notifModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-teal-100 text-teal-800 flex items-center justify-center">
+                  <Megaphone className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-black text-base text-slate-900 leading-tight">
+                    Broadcast Notice to Customers
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Sends live notice to all customer phones & header bell
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNotifModalOpen(false)}
+                className="p-1 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                <X className="w-5 h-5 text-slate-500" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveBroadcastNotice} className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Notice Title *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Free Sunday Health & Blood Pressure Camp"
+                  value={notifForm.title}
+                  onChange={(e) => setNotifForm({ ...notifForm, title: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-teal-600"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Category
+                  </label>
+                  <select
+                    value={notifForm.category}
+                    onChange={(e) => {
+                      const cat = e.target.value;
+                      let type: 'general' | 'alert' | 'offer' | 'urgent' = 'general';
+                      let badge = 'Notice';
+                      if (cat.includes('Camp')) {
+                        type = 'general';
+                        badge = 'Health Camp';
+                      } else if (cat.includes('Emergency') || cat.includes('Alert')) {
+                        type = 'alert';
+                        badge = 'Urgent Alert';
+                      } else if (cat.includes('Discount') || cat.includes('Offer')) {
+                        type = 'offer';
+                        badge = 'Special Deal';
+                      } else if (cat.includes('Stock')) {
+                        type = 'general';
+                        badge = 'In Stock';
+                      }
+                      setNotifForm({
+                        ...notifForm,
+                        category: cat,
+                        type,
+                        badge,
+                      });
+                    }}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-teal-600 bg-white"
+                  >
+                    <option value="Clinic Announcement">Announcement</option>
+                    <option value="Health Camp / Event">Health Camp</option>
+                    <option value="Clinic Timings / Holiday">Clinic Timings</option>
+                    <option value="Medicine Stock Update">Medicine Stock</option>
+                    <option value="Emergency / Alert">Emergency Alert</option>
+                    <option value="Special Offer / Deal">Discount / Offer</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Badge Label
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Notice, Alert, Free Camp"
+                    value={notifForm.badge}
+                    onChange={(e) => setNotifForm({ ...notifForm, badge: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-teal-600"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Message Details *
+                </label>
+                <textarea
+                  required
+                  rows={3}
+                  placeholder="e.g. Dr. Nayak and Dr. Mahalik are hosting a special consultation session this Sunday from 10 AM to 2 PM at Hospital Square. Walk-ins welcome."
+                  value={notifForm.message}
+                  onChange={(e) => setNotifForm({ ...notifForm, message: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:outline-teal-600 leading-relaxed"
+                />
+              </div>
+
+              <div className="pt-1 border-t border-slate-100">
+                <span className="block text-[11px] font-bold text-slate-600 mb-2">
+                  Optional Action Button (Tapped by Patient)
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                      Button Text
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Open Store / Book OPD"
+                      value={notifForm.actionLabel || ''}
+                      onChange={(e) => setNotifForm({ ...notifForm, actionLabel: e.target.value })}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-medium focus:outline-teal-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                      Target Screen
+                    </label>
+                    <select
+                      value={notifForm.actionUrl || ''}
+                      onChange={(e) => setNotifForm({ ...notifForm, actionUrl: e.target.value })}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-medium focus:outline-teal-600 bg-white"
+                    >
+                      <option value="">None (Just read)</option>
+                      <option value="store">Pharmacy Store</option>
+                      <option value="doctors">Doctor Directory</option>
+                      <option value="appointments">Calendar & Tests</option>
+                      <option value="offers">Special Offers</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setNotifModalOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isBroadcasting}
+                  className="px-4 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-extrabold shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {isBroadcasting ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5" />
+                  )}
+                  <span>{isBroadcasting ? 'Broadcasting...' : 'Broadcast to All Phones'}</span>
                 </button>
               </div>
             </form>

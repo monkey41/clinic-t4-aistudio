@@ -3,6 +3,7 @@ import {
   Product,
   Language,
   DoctorArrival,
+  ClinicNotification,
   PathologyTest,
   SpecialOffer,
   BookingHistoryItem,
@@ -533,6 +534,56 @@ export function getUnannouncedArrivals(): DoctorArrival[] {
 export function saveUnannouncedArrivals(arrivals: DoctorArrival[]): void {
   try {
     localStorage.setItem('lifecare_unannounced_arrivals', JSON.stringify(arrivals));
+    notifyClinicDataChanged();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+// Default Clinic Broadcast Notifications (Normal notices sent to all customers)
+export const DEFAULT_CLINIC_NOTIFICATIONS: ClinicNotification[] = [
+  {
+    id: 'notif-welcome',
+    title: '🏥 Life Care Pharmacy & Poly Clinic Open 7 Days',
+    message: 'Genuine prescription medicines, pathology lab testing, and specialist doctor consultations available daily at Hospital Square, Baripada.',
+    type: 'general',
+    category: 'Clinic Announcement',
+    badge: 'Notice',
+    active: true,
+    createdAt: new Date().toISOString(),
+    sentByAdminAt: 'Always Active',
+    actionLabel: 'Explore Services',
+  },
+  {
+    id: 'notif-home-delivery',
+    title: '🚚 Free Medicine Delivery in Baripada Town',
+    message: 'Send your prescription on WhatsApp or order online from our store for instant doorstep medicine delivery.',
+    type: 'offer',
+    category: 'Service Update',
+    badge: 'Free Delivery',
+    active: true,
+    createdAt: new Date().toISOString(),
+    sentByAdminAt: 'Active',
+    actionLabel: 'Order Medicines',
+  },
+];
+
+export function getClinicNotifications(): ClinicNotification[] {
+  try {
+    const saved = localStorage.getItem('lifecare_clinic_notifications');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.error(e);
+  }
+  return DEFAULT_CLINIC_NOTIFICATIONS;
+}
+
+export function saveClinicNotifications(notifications: ClinicNotification[]): void {
+  try {
+    localStorage.setItem('lifecare_clinic_notifications', JSON.stringify(notifications));
     notifyClinicDataChanged();
   } catch (e) {
     console.error(e);

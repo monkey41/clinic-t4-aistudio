@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Language, DoctorArrival, SpecialOffer } from '../types';
+import { Language, DoctorArrival, SpecialOffer, ClinicNotification } from '../types';
 import {
   Phone,
   Menu,
@@ -13,6 +13,9 @@ import {
   Download,
   Smartphone,
   CheckCircle2,
+  Megaphone,
+  Info,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   CLINIC_CONFIG,
@@ -30,6 +33,7 @@ interface HeaderProps {
   activeTab: string;
   specialOffers?: SpecialOffer[];
   unannouncedArrivals?: DoctorArrival[];
+  notifications?: ClinicNotification[];
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -38,6 +42,7 @@ export const Header: React.FC<HeaderProps> = ({
   activeTab,
   specialOffers = DEFAULT_SPECIAL_OFFERS,
   unannouncedArrivals = [],
+  notifications = [],
 }) => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -81,12 +86,17 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   const topOffers = specialOffers.slice(0, 2);
+  const activeNotifications = React.useMemo(() => {
+    return notifications.filter((n) => n.active !== false);
+  }, [notifications]);
+
   const currentNotifKeys = React.useMemo(() => {
     const keys: string[] = [];
+    activeNotifications.forEach((n) => keys.push(`notif-${n.id}-${n.createdAt || ''}`));
     unannouncedArrivals.forEach((a) => keys.push(`arr-${a.id}-${a.sentByAdminAt || ''}`));
     topOffers.forEach((o) => keys.push(`off-${o.id}`));
     return keys;
-  }, [unannouncedArrivals, topOffers]);
+  }, [activeNotifications, unannouncedArrivals, topOffers]);
 
   // Read notifications from localStorage
   const [readNotifKeys, setReadNotifKeys] = useState<string[]>(() => {
@@ -239,117 +249,210 @@ export const Header: React.FC<HeaderProps> = ({
                       </div>
                     </div>
 
-                    <div className="max-h-72 overflow-y-auto space-y-2.5 pr-1 scrollbar-thin">
-                      {/* 1. SPECIAL OFFER NOTIFICATIONS */}
-                      <div className="space-y-1.5">
-                        <span
-                          className={`text-[10px] font-extrabold uppercase tracking-wider block ${theme.accentText}`}
-                        >
-                          🎁 Special Offers
-                        </span>
-                        {topOffers.map((offer) => (
-                          <button
-                            key={offer.id}
-                            type="button"
-                            onClick={() => {
-                              setNotifOpen(false);
-                              onTabChange('offers');
-                            }}
-                            className={`w-full p-2.5 rounded-2xl border text-left transition-colors flex items-center justify-between gap-2 cursor-pointer ${theme.softCardBg}`}
+                    <div className="max-h-80 overflow-y-auto space-y-3 pr-1 scrollbar-thin">
+                      {/* 1. GENERAL CLINIC NOTICES & ANNOUNCEMENTS (BROADCASTS) */}
+                      {activeNotifications.length > 0 && (
+                        <div className="space-y-1.5">
+                          <span
+                            className={`text-[10px] font-extrabold uppercase tracking-wider block flex items-center gap-1 ${theme.accentText}`}
                           >
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <Sparkles className="w-3 h-3 shrink-0" />
+                            <Megaphone className="w-3 h-3" />
+                            <span>Clinic Announcements</span>
+                          </span>
+
+                          {activeNotifications.map((notif) => (
+                            <div
+                              key={notif.id}
+                              className={`p-3 rounded-2xl border text-left transition-colors relative overflow-hidden ${
+                                notif.type === 'alert' || notif.type === 'urgent'
+                                  ? 'bg-rose-50/90 border-rose-200'
+                                  : notif.type === 'offer'
+                                  ? 'bg-amber-50/80 border-amber-200'
+                                  : 'bg-teal-50/70 border-teal-200/80'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-1 mb-1">
                                 <span
-                                  className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded ${theme.primaryBtn}`}
+                                  className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded ${
+                                    notif.type === 'alert' || notif.type === 'urgent'
+                                      ? 'bg-rose-600 text-white'
+                                      : notif.type === 'offer'
+                                      ? 'bg-amber-500 text-slate-950'
+                                      : 'bg-teal-700 text-white'
+                                  }`}
                                 >
-                                  {offer.discountText}
+                                  {notif.badge || notif.category || 'Notice'}
+                                </span>
+                                <span className="text-[9px] font-semibold text-slate-400">
+                                  {notif.sentByAdminAt || 'Recent'}
                                 </span>
                               </div>
-                              <h5 className={`font-extrabold text-xs truncate mt-1 ${theme.headingText}`}>
-                                {offer.title}
+
+                              <h5 className="font-extrabold text-xs text-slate-900 leading-tight">
+                                {notif.title}
                               </h5>
-                              <p className={`text-[10px] truncate ${theme.subText}`}>
-                                {offer.subtitle}
+                              <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
+                                {notif.message}
                               </p>
+
+                              {notif.actionLabel && (
+                                <div className="mt-2 pt-1.5 border-t border-slate-200/60 flex justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setNotifOpen(false);
+                                      if (notif.actionUrl && notif.actionUrl.startsWith('http')) {
+                                        window.open(notif.actionUrl, '_blank', 'noopener,noreferrer');
+                                      } else if (
+                                        notif.actionUrl &&
+                                        ['home', 'doctors', 'store', 'appointments', 'offers'].includes(notif.actionUrl)
+                                      ) {
+                                        onTabChange(notif.actionUrl as any);
+                                      } else {
+                                        const text = (notif.title + ' ' + notif.message).toLowerCase();
+                                        if (text.includes('medicine') || text.includes('store') || text.includes('order')) {
+                                          onTabChange('store');
+                                        } else if (text.includes('doctor') || text.includes('opd') || text.includes('consult')) {
+                                          onTabChange('doctors');
+                                        } else if (text.includes('test') || text.includes('lab') || text.includes('pathology')) {
+                                          onTabChange('appointments');
+                                        } else if (text.includes('offer') || text.includes('discount')) {
+                                          onTabChange('offers');
+                                        }
+                                      }
+                                    }}
+                                    className="text-[10px] font-extrabold text-teal-800 hover:text-teal-950 flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <span>{notif.actionLabel}</span>
+                                    <ArrowRight className="w-2.5 h-2.5" />
+                                  </button>
+                                </div>
+                              )}
                             </div>
-                            <span
-                              className={`text-[11px] font-bold shrink-0 flex items-center gap-0.5 ${theme.accentText}`}
-                            >
-                              Open <ArrowRight className="w-3 h-3" />
-                            </span>
-                          </button>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      )}
 
                       {/* 2. DOCTORS ARRIVING UNANNOUNCED */}
-                      <div className="space-y-1.5 pt-1">
-                        <span
-                          className={`text-[10px] font-extrabold uppercase tracking-wider block ${theme.accentText}`}
-                        >
-                          👨‍⚕️ Doctors Arriving Unannounced
-                        </span>
-
-                        {unannouncedArrivals.map((arrival) => (
-                          <div
-                            key={arrival.id}
-                            className={`p-2.5 rounded-2xl border text-left transition-colors flex items-start gap-2.5 ${theme.subtleBg}`}
+                      {unannouncedArrivals.length > 0 && (
+                        <div className="space-y-1.5 pt-1">
+                          <span
+                            className={`text-[10px] font-extrabold uppercase tracking-wider block ${theme.accentText}`}
                           >
-                            <img
-                              src={arrival.photo}
-                              alt={arrival.doctorName}
-                              className="w-10 h-10 rounded-xl object-cover object-top border border-slate-200 shrink-0"
-                              referrerPolicy="no-referrer"
-                            />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between gap-1">
-                                <span
-                                  className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded border ${theme.badge}`}
-                                >
-                                  Unannounced Visit
-                                </span>
-                                <span className={`text-[9px] font-semibold ${theme.subText}`}>
-                                  {arrival.sentByAdminAt || 'Today'}
-                                </span>
-                              </div>
-                              <h5 className={`font-extrabold text-xs truncate mt-1 ${theme.headingText}`}>
-                                {arrival.doctorName}
-                              </h5>
-                              <p className={`text-[10px] truncate font-semibold ${theme.accentText}`}>
-                                {arrival.specialty}
-                              </p>
-                              {arrival.note && (
-                                <p className={`text-[10px] mt-0.5 leading-snug ${theme.subText}`}>
-                                  {arrival.note}
+                            👨‍⚕️ Doctors Arriving Unannounced
+                          </span>
+
+                          {unannouncedArrivals.map((arrival) => (
+                            <div
+                              key={arrival.id}
+                              className={`p-2.5 rounded-2xl border text-left transition-colors flex items-start gap-2.5 ${theme.subtleBg}`}
+                            >
+                              <img
+                                src={arrival.photo}
+                                alt={arrival.doctorName}
+                                className="w-10 h-10 rounded-xl object-cover object-top border border-slate-200 shrink-0"
+                                referrerPolicy="no-referrer"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span
+                                    className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded border ${theme.badge}`}
+                                  >
+                                    Unannounced Visit
+                                  </span>
+                                  <span className={`text-[9px] font-semibold ${theme.subText}`}>
+                                    {arrival.sentByAdminAt || 'Today'}
+                                  </span>
+                                </div>
+                                <h5 className={`font-extrabold text-xs truncate mt-1 ${theme.headingText}`}>
+                                  {arrival.doctorName}
+                                </h5>
+                                <p className={`text-[10px] truncate font-semibold ${theme.accentText}`}>
+                                  {arrival.specialty}
                                 </p>
-                              )}
-                              <div
-                                className={`flex items-center justify-between mt-1.5 pt-1 border-t text-[10px] ${theme.border}`}
-                              >
-                                <span className={`truncate font-bold ${theme.headingText}`}>
-                                  🕒 {arrival.timing}
-                                </span>
-                                <a
-                                  href={DOCTOR_BOOKING_URL}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  onClick={() => {
-                                    addBookingHistoryItem(
-                                      'doctor',
-                                      arrival.doctorName,
-                                      arrival.timing
-                                    );
-                                    setNotifOpen(false);
-                                  }}
-                                  className={`font-extrabold underline flex items-center gap-0.5 ml-1 shrink-0 ${theme.accentText}`}
+                                {arrival.note && (
+                                  <p className={`text-[10px] mt-0.5 leading-snug ${theme.subText}`}>
+                                    {arrival.note}
+                                  </p>
+                                )}
+                                <div
+                                  className={`flex items-center justify-between mt-1.5 pt-1 border-t text-[10px] ${theme.border}`}
                                 >
-                                  Book OPD <ExternalLink className="w-2.5 h-2.5" />
-                                </a>
+                                  <span className={`truncate font-bold ${theme.headingText}`}>
+                                    🕒 {arrival.timing}
+                                  </span>
+                                  <a
+                                    href={DOCTOR_BOOKING_URL}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={() => {
+                                      addBookingHistoryItem(
+                                        'doctor',
+                                        arrival.doctorName,
+                                        arrival.timing
+                                      );
+                                      setNotifOpen(false);
+                                    }}
+                                    className={`font-extrabold underline flex items-center gap-0.5 ml-1 shrink-0 ${theme.accentText}`}
+                                  >
+                                    Book OPD <ExternalLink className="w-2.5 h-2.5" />
+                                  </a>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* 3. SPECIAL OFFER NOTIFICATIONS */}
+                      {topOffers.length > 0 && (
+                        <div className="space-y-1.5 pt-1">
+                          <span
+                            className={`text-[10px] font-extrabold uppercase tracking-wider block ${theme.accentText}`}
+                          >
+                            🎁 Special Offers
+                          </span>
+                          {topOffers.map((offer) => (
+                            <button
+                              key={offer.id}
+                              type="button"
+                              onClick={() => {
+                                setNotifOpen(false);
+                                onTabChange('offers');
+                              }}
+                              className={`w-full p-2.5 rounded-2xl border text-left transition-colors flex items-center justify-between gap-2 cursor-pointer ${theme.softCardBg}`}
+                            >
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <Sparkles className="w-3 h-3 shrink-0" />
+                                  <span
+                                    className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded ${theme.primaryBtn}`}
+                                  >
+                                    {offer.discountText}
+                                  </span>
+                                </div>
+                                <h5 className={`font-extrabold text-xs truncate mt-1 ${theme.headingText}`}>
+                                  {offer.title}
+                                </h5>
+                                <p className={`text-[10px] truncate ${theme.subText}`}>
+                                  {offer.subtitle}
+                                </p>
+                              </div>
+                              <span
+                                className={`text-[11px] font-bold shrink-0 flex items-center gap-0.5 ${theme.accentText}`}
+                              >
+                                Open <ArrowRight className="w-3 h-3" />
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {activeNotifications.length === 0 && unannouncedArrivals.length === 0 && topOffers.length === 0 && (
+                        <div className="text-center py-6 text-slate-400 text-xs font-medium">
+                          No new notifications right now.
+                        </div>
+                      )}
                     </div>
 
                     <div

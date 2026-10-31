@@ -21,7 +21,7 @@ import {
   Unsubscribe,
   Firestore,
 } from 'firebase/firestore';
-import { Product } from '../types';
+import { Product, DoctorArrival, ClinicNotification } from '../types';
 
 // Load Firebase configuration from Vite environment variables (VITE_FIREBASE_*)
 // Default fallback values configured from user's Firebase project
@@ -544,5 +544,219 @@ export async function fetchProductsFromFirestore(): Promise<Product[] | null> {
   } catch (err) {
     console.warn('Could not fetch products from Firestore, using local defaults:', err);
     return null;
+  }
+}
+
+/**
+ * =========================================================================
+ * CLINIC BROADCAST NOTIFICATIONS (General Customer Notices & Announcements)
+ * =========================================================================
+ */
+
+/**
+ * Sync / Save Broadcast Notification to Firestore collection 'clinic_notifications'
+ */
+export async function syncNotificationToFirestore(
+  notification: ClinicNotification
+): Promise<boolean> {
+  const db = getFirebaseDb();
+  if (!db) return false;
+
+  try {
+    const notifRef = doc(db, 'clinic_notifications', notification.id);
+    await setDoc(
+      notifRef,
+      {
+        ...notification,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+    return true;
+  } catch (err: any) {
+    console.error('Firestore sync error for notification:', err);
+    throw err;
+  }
+}
+
+/**
+ * Delete Broadcast Notification from Firestore collection 'clinic_notifications'
+ */
+export async function deleteNotificationFromFirestore(
+  notificationId: string
+): Promise<boolean> {
+  const db = getFirebaseDb();
+  if (!db) return false;
+
+  try {
+    const notifRef = doc(db, 'clinic_notifications', notificationId);
+    await deleteDoc(notifRef);
+    return true;
+  } catch (err: any) {
+    console.error('Firestore delete error for notification:', err);
+    throw err;
+  }
+}
+
+/**
+ * Fetch all active Broadcast Notifications from Firestore
+ */
+export async function fetchNotificationsFromFirestore(): Promise<ClinicNotification[] | null> {
+  const db = getFirebaseDb();
+  if (!db) return null;
+
+  try {
+    const colRef = collection(db, 'clinic_notifications');
+    const snapshot = await getDocs(colRef);
+    if (snapshot.empty) return null;
+
+    const list: ClinicNotification[] = [];
+    snapshot.forEach((d) => {
+      list.push(d.data() as ClinicNotification);
+    });
+    // Sort newest first
+    return list.sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  } catch (err) {
+    console.warn('Could not fetch notifications from Firestore:', err);
+    return null;
+  }
+}
+
+/**
+ * Real-time listener for Broadcast Notifications
+ * Ensures customer devices instantly receive notifications sent by Admin in real-time
+ */
+export function subscribeToClinicNotifications(
+  callback: (notifications: ClinicNotification[]) => void
+): () => void {
+  const db = getFirebaseDb();
+  if (!db) return () => {};
+
+  try {
+    const colRef = collection(db, 'clinic_notifications');
+    const unsubscribe = onSnapshot(
+      colRef,
+      (snapshot) => {
+        const list: ClinicNotification[] = [];
+        snapshot.forEach((d) => {
+          list.push(d.data() as ClinicNotification);
+        });
+        const sorted = list.sort(
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+        callback(sorted);
+      },
+      (err) => {
+        console.warn('Real-time notification listener encountered an error:', err);
+      }
+    );
+    return unsubscribe;
+  } catch (err) {
+    console.warn('Could not establish real-time notification listener:', err);
+    return () => {};
+  }
+}
+
+/**
+ * =========================================================================
+ * UNANNOUNCED DOCTOR ARRIVALS (Syncs doctor visits across devices)
+ * =========================================================================
+ */
+
+/**
+ * Sync Doctor Arrival Alert to Firestore collection 'unannounced_arrivals'
+ */
+export async function syncArrivalToFirestore(arrival: DoctorArrival): Promise<boolean> {
+  const db = getFirebaseDb();
+  if (!db) return false;
+
+  try {
+    const arrivalRef = doc(db, 'unannounced_arrivals', arrival.id);
+    await setDoc(
+      arrivalRef,
+      {
+        ...arrival,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+    return true;
+  } catch (err: any) {
+    console.error('Firestore sync error for doctor arrival:', err);
+    throw err;
+  }
+}
+
+/**
+ * Delete Doctor Arrival Alert from Firestore collection 'unannounced_arrivals'
+ */
+export async function deleteArrivalFromFirestore(arrivalId: string): Promise<boolean> {
+  const db = getFirebaseDb();
+  if (!db) return false;
+
+  try {
+    const arrivalRef = doc(db, 'unannounced_arrivals', arrivalId);
+    await deleteDoc(arrivalRef);
+    return true;
+  } catch (err: any) {
+    console.error('Firestore delete error for doctor arrival:', err);
+    throw err;
+  }
+}
+
+/**
+ * Fetch all Doctor Arrivals from Firestore
+ */
+export async function fetchArrivalsFromFirestore(): Promise<DoctorArrival[] | null> {
+  const db = getFirebaseDb();
+  if (!db) return null;
+
+  try {
+    const colRef = collection(db, 'unannounced_arrivals');
+    const snapshot = await getDocs(colRef);
+    if (snapshot.empty) return null;
+
+    const list: DoctorArrival[] = [];
+    snapshot.forEach((d) => {
+      list.push(d.data() as DoctorArrival);
+    });
+    return list;
+  } catch (err) {
+    console.warn('Could not fetch arrivals from Firestore:', err);
+    return null;
+  }
+}
+
+/**
+ * Real-time listener for Unannounced Doctor Arrivals
+ * Ensures customer phones instantly see doctor alerts posted by Admin
+ */
+export function subscribeToArrivals(
+  callback: (arrivals: DoctorArrival[]) => void
+): () => void {
+  const db = getFirebaseDb();
+  if (!db) return () => {};
+
+  try {
+    const colRef = collection(db, 'unannounced_arrivals');
+    const unsubscribe = onSnapshot(
+      colRef,
+      (snapshot) => {
+        const list: DoctorArrival[] = [];
+        snapshot.forEach((d) => {
+          list.push(d.data() as DoctorArrival);
+        });
+        callback(list);
+      },
+      (err) => {
+        console.warn('Real-time arrival listener encountered an error:', err);
+      }
+    );
+    return unsubscribe;
+  } catch (err) {
+    console.warn('Could not establish real-time arrival listener:', err);
+    return () => {};
   }
 }

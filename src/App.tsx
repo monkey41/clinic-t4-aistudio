@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { SpecialOffer, DoctorArrival, Doctor, Product, ClinicConfig } from './types';
+import { SpecialOffer, DoctorArrival, Doctor, Product, ClinicConfig, ClinicNotification } from './types';
 import { Header } from './components/Header';
 import { DoctorSwipe } from './components/DoctorSwipe';
 import { ClinicMap } from './components/ClinicMap';
@@ -14,6 +14,9 @@ import {
   getProducts,
   getSpecialOffers,
   getUnannouncedArrivals,
+  saveUnannouncedArrivals,
+  getClinicNotifications,
+  saveClinicNotifications,
   getClinicConfig,
   getThemePalette,
   addBookingHistoryItem,
@@ -31,7 +34,14 @@ import {
   Pill,
   ChevronRight,
 } from 'lucide-react';
-import { fetchProductsFromFirestore, adminSignOut } from './services/firebase';
+import {
+  fetchProductsFromFirestore,
+  adminSignOut,
+  subscribeToClinicNotifications,
+  fetchNotificationsFromFirestore,
+  subscribeToArrivals,
+  fetchArrivalsFromFirestore,
+} from './services/firebase';
 
 const resolveCurrentTab = (): 'home' | 'doctors' | 'store' | 'appointments' | 'offers' | 'admin' => {
   if (typeof window === 'undefined') return 'home';
@@ -70,23 +80,28 @@ export default function App() {
   const [unannouncedArrivals, setUnannouncedArrivals] = useState<DoctorArrival[]>(() =>
     getUnannouncedArrivals()
   );
+  const [notifications, setNotifications] = useState<ClinicNotification[]>(() =>
+    getClinicNotifications()
+  );
   const [clinicConfig, setClinicConfig] = useState<ClinicConfig>(() => getClinicConfig());
 
-  // Listen to live clinic data modifications from Admin Portal
+  // Listen to live clinic data modifications from Admin Portal (same device)
   useEffect(() => {
     const syncData = () => {
       setDoctors(getDoctors());
       setProducts(getProducts());
       setSpecialOffers(getSpecialOffers());
       setUnannouncedArrivals(getUnannouncedArrivals());
+      setNotifications(getClinicNotifications());
       setClinicConfig(getClinicConfig());
     };
     window.addEventListener('clinic-data-updated', syncData);
     return () => window.removeEventListener('clinic-data-updated', syncData);
   }, []);
 
-  // Sync products from Firestore on initial app load if available
+  // Real-time Firestore sync across all customer devices and phones
   useEffect(() => {
+    // 1. Initial product sync
     fetchProductsFromFirestore()
       .then((cloudProducts) => {
         if (cloudProducts && cloudProducts.length > 0) {
@@ -94,8 +109,53 @@ export default function App() {
         }
       })
       .catch((err) => {
-        console.warn('Firestore initial sync skipped, using local cache:', err);
+        console.warn('Firestore initial product sync skipped:', err);
       });
+
+    // 2. Initial fetch for broadcast notices
+    fetchNotificationsFromFirestore()
+      .then((cloudNotifs) => {
+        if (cloudNotifs && cloudNotifs.length > 0) {
+          setNotifications(cloudNotifs);
+          saveClinicNotifications(cloudNotifs);
+        }
+      })
+      .catch((err) => {
+        console.warn('Firestore initial notification fetch skipped:', err);
+      });
+
+    // 3. Initial fetch for doctor arrival alerts
+    fetchArrivalsFromFirestore()
+      .then((cloudArrivals) => {
+        if (cloudArrivals && cloudArrivals.length > 0) {
+          setUnannouncedArrivals(cloudArrivals);
+          saveUnannouncedArrivals(cloudArrivals);
+        }
+      })
+      .catch((err) => {
+        console.warn('Firestore initial arrivals fetch skipped:', err);
+      });
+
+    // 4. Real-time live listener for Broadcast Notifications
+    const unsubNotifs = subscribeToClinicNotifications((liveNotifs) => {
+      if (liveNotifs && liveNotifs.length > 0) {
+        setNotifications(liveNotifs);
+        saveClinicNotifications(liveNotifs);
+      }
+    });
+
+    // 5. Real-time live listener for Doctor Arrivals
+    const unsubArrivals = subscribeToArrivals((liveArrivals) => {
+      if (liveArrivals && liveArrivals.length > 0) {
+        setUnannouncedArrivals(liveArrivals);
+        saveUnannouncedArrivals(liveArrivals);
+      }
+    });
+
+    return () => {
+      unsubNotifs();
+      unsubArrivals();
+    };
   }, []);
 
   // Handle URL history and browser back/forward/refresh buttons
@@ -165,6 +225,7 @@ export default function App() {
           activeTab={activeTab}
           specialOffers={specialOffers}
           unannouncedArrivals={unannouncedArrivals}
+          notifications={notifications}
         />
 
         {/* Main Content Area */}

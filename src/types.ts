@@ -40,6 +40,20 @@ export interface DoctorArrival {
   sentByAdminAt?: string;
 }
 
+export interface ClinicNotification {
+  id: string;
+  title: string;
+  message: string;
+  type: 'general' | 'doctor_arrival' | 'offer' | 'alert' | 'urgent';
+  category?: string; // e.g., 'Notice', 'Health Camp', 'Timing Update', 'Stock Update', 'Emergency'
+  badge?: string; // Short badge label
+  actionUrl?: string; // Optional link or tab action
+  actionLabel?: string; // e.g. "Open Store", "Book OPD", "View Details"
+  active: boolean;
+  createdAt: string;
+  sentByAdminAt?: string;
+}
+
 export interface CartItem {
   product: Product;
   quantity: number;

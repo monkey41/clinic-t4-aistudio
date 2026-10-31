@@ -56,6 +56,13 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Clinic Broadcast Notifications & Announcements:
+    // Public read for customer devices; write restricted to authorized admins.
+    match /clinic_notifications/{notificationId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // Pathology Lab Tests & Diagnostics:
     // Public read; write restricted to authorized admins.
     match /pathology_tests/{testId} {
