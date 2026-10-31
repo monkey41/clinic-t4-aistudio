@@ -31,7 +31,7 @@ import {
   Pill,
   ChevronRight,
 } from 'lucide-react';
-import { fetchProductsFromFirestore } from './services/firebase';
+import { fetchProductsFromFirestore, adminSignOut } from './services/firebase';
 
 const resolveCurrentTab = (): 'home' | 'doctors' | 'store' | 'appointments' | 'offers' | 'admin' => {
   if (typeof window === 'undefined') return 'home';
@@ -45,7 +45,7 @@ const resolveCurrentTab = (): 'home' | 'doctors' | 'store' | 'appointments' | 'o
   }
   try {
     const stored = localStorage.getItem('lifecare_active_tab');
-    if (stored && ['home', 'doctors', 'store', 'appointments', 'offers', 'admin'].includes(stored)) {
+    if (stored && ['home', 'doctors', 'store', 'appointments', 'offers'].includes(stored)) {
       return stored as any;
     }
   } catch {
@@ -117,14 +117,20 @@ export default function App() {
   const handleTabChange = (
     tab: 'home' | 'doctors' | 'store' | 'appointments' | 'offers' | 'admin'
   ) => {
+    // If navigating away from admin, terminate admin session immediately
+    if (activeTab === 'admin' && tab !== 'admin') {
+      adminSignOut().catch(() => {});
+    }
     if (tab === 'appointments') {
       setAppointmentsSubTab('calendar');
     }
     setActiveTab(tab);
-    try {
-      localStorage.setItem('lifecare_active_tab', tab);
-    } catch {
-      // ignore
+    if (tab !== 'admin') {
+      try {
+        localStorage.setItem('lifecare_active_tab', tab);
+      } catch {
+        // ignore
+      }
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
 

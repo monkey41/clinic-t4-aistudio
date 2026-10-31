@@ -11,15 +11,22 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['apple-touch-icon.png', 'icon.svg'],
+        includeAssets: [
+          'apple-touch-icon.png',
+          'logo.png',
+          'favicon.png',
+          'pwa-192x192.png',
+          'pwa-512x512.png',
+          'pwa-maskable-512x512.png',
+        ],
         manifest: {
           id: '/',
           name: 'Life Care Medicine Store and Poly Clinic',
           short_name: 'Life Care',
           description:
             'Community pharmacy and poly clinic portal with specialist doctor OPD consultations, pathology blood test bookings, and physiotherapy supplies.',
-          theme_color: '#4987A4',
-          background_color: '#4987A4',
+          theme_color: '#0d9488',
+          background_color: '#ffffff',
           display: 'standalone',
           start_url: '/',
           scope: '/',
@@ -43,6 +50,10 @@ export default defineConfig(() => {
               purpose: 'maskable',
             },
           ],
+        },
+        workbox: {
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,jpeg,webp}'],
         },
         devOptions: {
           enabled: true,

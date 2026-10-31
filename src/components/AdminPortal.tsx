@@ -110,13 +110,10 @@ type AdminTab =
 export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
   // Authentication & Authorization State
   const [adminUser, setAdminUser] = useState<User | null>(null);
-  const [adminEmail, setAdminEmail] = useState<string>(() => {
-    return sessionStorage.getItem('lifecare_admin_email') || 'prayaspratikmohanty41@gmail.com';
-  });
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return sessionStorage.getItem('lifecare_admin_auth') === 'true';
-  });
-  const [authChecking, setAuthChecking] = useState<boolean>(true);
+  const [adminEmail, setAdminEmail] = useState<string>('prayaspratikmohanty41@gmail.com');
+  // Always start as unauthenticated so returning from history or dismissing page requires credentials
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [authChecking, setAuthChecking] = useState<boolean>(false);
   const [isSigningIn, setIsSigningIn] = useState<boolean>(false);
   const [emailInput, setEmailInput] = useState<string>('');
   const [passwordInput, setPasswordInput] = useState<string>('');
@@ -127,9 +124,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
   const [testingFirebase, setTestingFirebase] = useState<boolean>(false);
 
   // Single-machine session tracking
-  const [activeSessionId, setActiveSessionId] = useState<string>(() => {
-    return sessionStorage.getItem('lifecare_admin_session_id') || '';
-  });
+  const [activeSessionId, setActiveSessionId] = useState<string>('');
 
   // Admin Team Management State
   const [adminList, setAdminList] = useState<AdminProfile[]>([]);
@@ -198,17 +193,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
     }
   }, [isAuthenticated]);
 
-  // Listen for Firebase Auth state changes & restore session without reload errors
+  // Listen for Firebase Auth state changes
   useEffect(() => {
     const configured = isFirebaseConfigured();
     setFirebaseActive(configured);
     const auth = getFirebaseAuth();
 
     if (!auth) {
-      // In local demo or offline mode, preserve session if previously logged in
       setAuthChecking(false);
       return;
     }
+
+    setAuthChecking(false);
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
@@ -217,36 +213,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
         if (check.isAdmin) {
           setAdminUser(user);
           setAdminEmail(user.email || 'Admin');
-          setIsAuthenticated(true);
-          sessionStorage.setItem('lifecare_admin_auth', 'true');
-          sessionStorage.setItem('lifecare_admin_email', user.email || '');
-          setAuthError('');
-
-          // Register or maintain active machine session
-          let currentSessionId = sessionStorage.getItem('lifecare_admin_session_id');
-          if (!currentSessionId) {
-            currentSessionId = await registerAdminSession(user, user.displayName || undefined);
-            setActiveSessionId(currentSessionId);
-          }
         } else {
           // User is authenticated, but not an admin! Deny access and sign out.
           await adminSignOut();
           setAdminUser(null);
           setIsAuthenticated(false);
-          sessionStorage.removeItem('lifecare_admin_auth');
-          sessionStorage.removeItem('lifecare_admin_email');
           setAuthError(
             `Access Denied: The account "${user.email}" lacks administrator authorization. Only authorized clinic admins can access the admin portal.`
           );
         }
       } else {
-        // Firebase returned null user.
-        // If we had a local valid session, give Firebase a moment or verify if signed out intentionally
-        const hasSession = sessionStorage.getItem('lifecare_admin_auth') === 'true';
-        if (!hasSession && configured) {
-          setAdminUser(null);
-          setIsAuthenticated(false);
-        }
+        setAdminUser(null);
+        setIsAuthenticated(false);
       }
       setAuthChecking(false);
     });
@@ -254,19 +232,36 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
     return () => unsubscribe();
   }, []);
 
+  // Terminate admin session on navigating away, closing tab, or dismissing page
+  // Ensures that returning via browser history always prompts for admin credentials
+  useEffect(() => {
+    const handleDismiss = () => {
+      adminSignOut().catch(() => {});
+    };
+
+    window.addEventListener('beforeunload', handleDismiss);
+    window.addEventListener('pagehide', handleDismiss);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleDismiss);
+      window.removeEventListener('pagehide', handleDismiss);
+      // Auto-sign out when unmounting AdminPortal
+      adminSignOut().catch(() => {});
+    };
+  }, []);
+
   // Real-time single-machine listener: Revoke immediately if another machine logs in
   useEffect(() => {
     if (!isAuthenticated) return;
     const uid = adminUser?.uid || 'primary-admin';
-    const localSess = activeSessionId || sessionStorage.getItem('lifecare_admin_session_id') || '';
+    const localSess = activeSessionId || '';
     if (!localSess) return;
 
     const cleanup = listenToAdminSession(uid, localSess, (reason) => {
       setSessionWarning(reason);
       setAuthError(reason);
       setIsAuthenticated(false);
-      sessionStorage.removeItem('lifecare_admin_auth');
-      sessionStorage.removeItem('lifecare_admin_session_id');
+      adminSignOut().catch(() => {});
     });
 
     return () => {
@@ -297,10 +292,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
           setAdminUser(result.user);
           setAdminEmail(result.user.email || emailInput.trim());
           setIsAuthenticated(true);
-          sessionStorage.setItem('lifecare_admin_auth', 'true');
-          sessionStorage.setItem('lifecare_admin_email', result.user.email || '');
 
-          // Enforce single-machine session
+          // Enforce single-machine session tracking
           const newSessId = await registerAdminSession(result.user);
           setActiveSessionId(newSessId);
           showToast('Logged in as verified administrator (Single machine lock active)');
@@ -319,11 +312,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
         if (allowedAdmins.includes(normalized) && passwordInput.length >= 6) {
           setIsAuthenticated(true);
           setAdminEmail(emailInput.trim());
-          sessionStorage.setItem('lifecare_admin_auth', 'true');
-          sessionStorage.setItem('lifecare_admin_email', emailInput.trim());
           const fallbackSess = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
-          sessionStorage.setItem('lifecare_admin_session_id', fallbackSess);
-          localStorage.setItem('lifecare_admin_session_id', fallbackSess);
           setActiveSessionId(fallbackSess);
           showToast('Admin session active. Single-session lock engaged.');
         } else {
@@ -337,6 +326,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
     } finally {
       setIsSigningIn(false);
     }
+  };
+
+  // Explicit back to app with session destruction
+  const handleBackToApp = async () => {
+    try {
+      await adminSignOut();
+    } catch {
+      // ignore
+    }
+    setIsAuthenticated(false);
+    setAdminUser(null);
+    setActiveSessionId('');
+    onBackToApp();
   };
 
   // Add new administrator
@@ -960,7 +962,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
           <div className="flex items-center justify-between">
             <button
               type="button"
-              onClick={onBackToApp}
+              onClick={handleBackToApp}
               className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-teal-700 transition-colors cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4" />
@@ -973,8 +975,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
           </div>
 
           <div className="text-center space-y-2">
-            <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-teal-800 to-teal-600 text-white flex items-center justify-center shadow-lg shadow-teal-900/10">
-              <Lock className="w-7 h-7" />
+            <div className="w-16 h-16 mx-auto rounded-2xl bg-white border border-slate-200 p-1 flex items-center justify-center shadow-md">
+              <img
+                src="/logo.png"
+                alt="Life Care Pharmacy & Poly Clinic"
+                className="w-full h-full object-contain"
+              />
             </div>
             <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
               Life Care Pharmacy Admin
@@ -1097,7 +1103,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
           <div className="flex items-center gap-2 min-w-0">
             <button
               type="button"
-              onClick={onBackToApp}
+              onClick={handleBackToApp}
               className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
               title="Return to Customer Clinic view"
             >
@@ -1130,7 +1136,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
           <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
-              onClick={onBackToApp}
+              onClick={handleBackToApp}
               className="text-xs font-bold text-teal-700 bg-teal-50 border border-teal-200 px-2 py-1.5 rounded-xl hover:bg-teal-100 transition-colors cursor-pointer flex items-center gap-1"
               title="View Customer App"
             >

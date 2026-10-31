@@ -4,6 +4,8 @@ import {
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
+  setPersistence,
+  inMemoryPersistence,
   User,
   Auth,
 } from 'firebase/auth';
@@ -185,6 +187,13 @@ export async function adminSignIn(
   }
 
   try {
+    // Enforce inMemoryPersistence so no credentials linger in IndexedDB or localStorage
+    // When the user dismisses the page or closes the tab, the admin session is immediately cleared
+    try {
+      await setPersistence(auth, inMemoryPersistence);
+    } catch (persistErr) {
+      console.warn('Could not set inMemoryPersistence:', persistErr);
+    }
     const cred = await signInWithEmailAndPassword(auth, email.trim(), pass);
     const authCheck = await verifyUserIsAdmin(cred.user);
     if (!authCheck.isAdmin) {

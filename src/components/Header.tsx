@@ -10,6 +10,9 @@ import {
   ExternalLink,
   ShieldAlert,
   Lock,
+  Download,
+  Smartphone,
+  CheckCircle2,
 } from 'lucide-react';
 import {
   CLINIC_CONFIG,
@@ -42,22 +45,42 @@ export const Header: React.FC<HeaderProps> = ({
   const notifRef = React.useRef<HTMLDivElement>(null);
 
   const theme = getThemePalette();
-  const topOffers = specialOffers.slice(0, 2);
-
-  // Check if admin is currently authenticated to conditionally show admin indicator
-  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
-    return typeof window !== 'undefined' && sessionStorage.getItem('lifecare_admin_auth') === 'true';
-  });
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isStandalone, setIsStandalone] = useState<boolean>(false);
+  const [showIosTip, setShowIosTip] = useState<boolean>(false);
 
   useEffect(() => {
-    const checkAuth = () => {
-      setIsAdminAuthenticated(sessionStorage.getItem('lifecare_admin_auth') === 'true');
-    };
-    window.addEventListener('storage', checkAuth);
-    return () => window.removeEventListener('storage', checkAuth);
+    if (typeof window !== 'undefined') {
+      const isAppStandalone =
+        window.matchMedia('(display-mode: standalone)').matches ||
+        (window.navigator as any).standalone === true;
+      setIsStandalone(isAppStandalone);
+
+      const handleBeforeInstallPrompt = (e: Event) => {
+        e.preventDefault();
+        setDeferredPrompt(e);
+      };
+
+      window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      return () => {
+        window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      };
+    }
   }, []);
 
-  // Compute unique keys for current notifications
+  const handleInstallPwa = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const choice = await deferredPrompt.userChoice;
+      if (choice?.outcome === 'accepted') {
+        setDeferredPrompt(null);
+      }
+    } else {
+      setShowIosTip((prev) => !prev);
+    }
+  };
+
+  const topOffers = specialOffers.slice(0, 2);
   const currentNotifKeys = React.useMemo(() => {
     const keys: string[] = [];
     unannouncedArrivals.forEach((a) => keys.push(`arr-${a.id}-${a.sentByAdminAt || ''}`));
@@ -135,10 +158,12 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={() => onTabChange('home')}
               className="flex items-center gap-2 text-left group focus:outline-hidden cursor-pointer"
             >
-              <div
-                className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-lg shadow-sm transition-colors shrink-0 ${theme.primaryBtn}`}
-              >
-                ✚
+              <div className="w-9 h-9 rounded-xl overflow-hidden bg-white p-0.5 shadow-xs border border-slate-200/90 shrink-0 flex items-center justify-center">
+                <img
+                  src="/logo.png"
+                  alt="Life Care"
+                  className="w-full h-full object-contain"
+                />
               </div>
               <div>
                 <span
@@ -383,10 +408,12 @@ export const Header: React.FC<HeaderProps> = ({
             <div>
               <div className={`flex items-center justify-between pb-4 border-b ${theme.border}`}>
                 <div className="flex items-center gap-2">
-                  <div
-                    className={`w-6 h-6 rounded-lg flex items-center justify-center font-bold text-xs ${theme.primaryBtn}`}
-                  >
-                    ✚
+                  <div className="w-7 h-7 rounded-lg overflow-hidden bg-white p-0.5 shadow-2xs border border-slate-200/90 shrink-0 flex items-center justify-center">
+                    <img
+                      src="/logo.png"
+                      alt="Life Care"
+                      className="w-full h-full object-contain"
+                    />
                   </div>
                   <span className={`font-extrabold text-sm ${theme.headingText}`}>
                     Life Care Medicine Store
@@ -463,7 +490,42 @@ export const Header: React.FC<HeaderProps> = ({
                 >
                   <span>🎁</span> Special Offers
                 </button>
+              </div>
 
+              {/* Install PWA App to Home Screen */}
+              <div className="mt-4 p-3 rounded-2xl bg-teal-50 border border-teal-200/80 space-y-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-white p-0.5 border border-teal-200 shrink-0 overflow-hidden flex items-center justify-center shadow-2xs">
+                    <img src="/logo.png" alt="Life Care Logo" className="w-full h-full object-contain" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="font-extrabold text-xs text-slate-900 block leading-tight">
+                      Install Life Care App
+                    </span>
+                    <span className="text-[10px] text-teal-700 font-medium block">
+                      {isStandalone ? 'Installed on your device' : 'Save icon to your home screen'}
+                    </span>
+                  </div>
+                </div>
+
+                {!isStandalone && (
+                  <button
+                    type="button"
+                    onClick={handleInstallPwa}
+                    className="w-full py-2 px-3 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-98 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download App to Home Screen</span>
+                  </button>
+                )}
+
+                {showIosTip && !isStandalone && (
+                  <div className="p-2.5 rounded-xl bg-white text-slate-700 text-[11px] leading-relaxed border border-teal-100 shadow-2xs space-y-1">
+                    <p className="font-bold text-teal-900">How to add to your Home Screen:</p>
+                    <p>• <strong>iPhone / iPad:</strong> Tap the <strong>Share</strong> button (square with arrow) at the bottom of Safari, then tap <strong>"Add to Home Screen"</strong>.</p>
+                    <p>• <strong>Android / PC:</strong> Tap the <strong>Install</strong> icon in your browser's address bar or menu.</p>
+                  </div>
+                )}
               </div>
             </div>
 
