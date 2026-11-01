@@ -51,24 +51,52 @@ export const Header: React.FC<HeaderProps> = ({
 
   const theme = getThemePalette();
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [isStandalone, setIsStandalone] = useState<boolean>(false);
+  const [isAppInstalled, setIsAppInstalled] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return Boolean(
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (window.navigator as any).standalone === true ||
+      localStorage.getItem('lifecare_pwa_installed') === 'true'
+    );
+  });
   const [showIosTip, setShowIosTip] = useState<boolean>(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const isAppStandalone =
-        window.matchMedia('(display-mode: standalone)').matches ||
-        (window.navigator as any).standalone === true;
-      setIsStandalone(isAppStandalone);
+      const checkInstalled = () => {
+        const isStandalone =
+          window.matchMedia('(display-mode: standalone)').matches ||
+          (window.navigator as any).standalone === true ||
+          localStorage.getItem('lifecare_pwa_installed') === 'true';
+        setIsAppInstalled(Boolean(isStandalone));
+      };
+
+      checkInstalled();
 
       const handleBeforeInstallPrompt = (e: Event) => {
+        if (localStorage.getItem('lifecare_pwa_installed') === 'true') {
+          return;
+        }
         e.preventDefault();
         setDeferredPrompt(e);
       };
 
+      const handleAppInstalled = () => {
+        setIsAppInstalled(true);
+        try {
+          localStorage.setItem('lifecare_pwa_installed', 'true');
+        } catch {
+          // ignore
+        }
+        setDeferredPrompt(null);
+      };
+
       window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.addEventListener('appinstalled', handleAppInstalled);
+
       return () => {
         window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+        window.removeEventListener('appinstalled', handleAppInstalled);
       };
     }
   }, []);
@@ -78,6 +106,12 @@ export const Header: React.FC<HeaderProps> = ({
       deferredPrompt.prompt();
       const choice = await deferredPrompt.userChoice;
       if (choice?.outcome === 'accepted') {
+        setIsAppInstalled(true);
+        try {
+          localStorage.setItem('lifecare_pwa_installed', 'true');
+        } catch {
+          // ignore
+        }
         setDeferredPrompt(null);
       }
     } else {
@@ -595,23 +629,23 @@ export const Header: React.FC<HeaderProps> = ({
                 </button>
               </div>
 
-              {/* Install PWA App to Home Screen */}
-              <div className="mt-4 p-3 rounded-2xl bg-teal-50 border border-teal-200/80 space-y-2">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-white p-0.5 border border-teal-200 shrink-0 overflow-hidden flex items-center justify-center shadow-2xs">
-                    <img src="/logo.png" alt="Life Care Logo" className="w-full h-full object-contain" />
+              {/* Install PWA App to Home Screen (Hidden once installed) */}
+              {!isAppInstalled && (
+                <div className="mt-4 p-3 rounded-2xl bg-teal-50 border border-teal-200/80 space-y-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-white p-0.5 border border-teal-200 shrink-0 overflow-hidden flex items-center justify-center shadow-2xs">
+                      <img src="/logo.png" alt="Life Care Logo" className="w-full h-full object-contain" />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="font-extrabold text-xs text-slate-900 block leading-tight">
+                        Install Life Care App
+                      </span>
+                      <span className="text-[10px] text-teal-700 font-medium block">
+                        Save icon to your home screen
+                      </span>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <span className="font-extrabold text-xs text-slate-900 block leading-tight">
-                      Install Life Care App
-                    </span>
-                    <span className="text-[10px] text-teal-700 font-medium block">
-                      {isStandalone ? 'Installed on your device' : 'Save icon to your home screen'}
-                    </span>
-                  </div>
-                </div>
 
-                {!isStandalone && (
                   <button
                     type="button"
                     onClick={handleInstallPwa}
@@ -620,16 +654,16 @@ export const Header: React.FC<HeaderProps> = ({
                     <Download className="w-3.5 h-3.5" />
                     <span>Download App to Home Screen</span>
                   </button>
-                )}
 
-                {showIosTip && !isStandalone && (
-                  <div className="p-2.5 rounded-xl bg-white text-slate-700 text-[11px] leading-relaxed border border-teal-100 shadow-2xs space-y-1">
-                    <p className="font-bold text-teal-900">How to add to your Home Screen:</p>
-                    <p>• <strong>iPhone / iPad:</strong> Tap the <strong>Share</strong> button (square with arrow) at the bottom of Safari, then tap <strong>"Add to Home Screen"</strong>.</p>
-                    <p>• <strong>Android / PC:</strong> Tap the <strong>Install</strong> icon in your browser's address bar or menu.</p>
-                  </div>
-                )}
-              </div>
+                  {showIosTip && (
+                    <div className="p-2.5 rounded-xl bg-white text-slate-700 text-[11px] leading-relaxed border border-teal-100 shadow-2xs space-y-1">
+                      <p className="font-bold text-teal-900">How to add to your Home Screen:</p>
+                      <p>• <strong>iPhone / iPad:</strong> Tap the <strong>Share</strong> button (square with arrow) at the bottom of Safari, then tap <strong>"Add to Home Screen"</strong>.</p>
+                      <p>• <strong>Android / PC:</strong> Tap the <strong>Install</strong> icon in your browser's address bar or menu.</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Hamburger Menu Footer */}

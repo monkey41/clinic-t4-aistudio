@@ -115,7 +115,7 @@ export default function App() {
     // 2. Initial fetch for broadcast notices
     fetchNotificationsFromFirestore()
       .then((cloudNotifs) => {
-        if (cloudNotifs && cloudNotifs.length > 0) {
+        if (cloudNotifs && Array.isArray(cloudNotifs) && cloudNotifs.length > 0) {
           setNotifications(cloudNotifs);
           saveClinicNotifications(cloudNotifs);
         }
@@ -127,7 +127,7 @@ export default function App() {
     // 3. Initial fetch for doctor arrival alerts
     fetchArrivalsFromFirestore()
       .then((cloudArrivals) => {
-        if (cloudArrivals && cloudArrivals.length > 0) {
+        if (cloudArrivals && Array.isArray(cloudArrivals) && cloudArrivals.length > 0) {
           setUnannouncedArrivals(cloudArrivals);
           saveUnannouncedArrivals(cloudArrivals);
         }
@@ -138,7 +138,7 @@ export default function App() {
 
     // 4. Real-time live listener for Broadcast Notifications
     const unsubNotifs = subscribeToClinicNotifications((liveNotifs) => {
-      if (liveNotifs && liveNotifs.length > 0) {
+      if (Array.isArray(liveNotifs)) {
         setNotifications(liveNotifs);
         saveClinicNotifications(liveNotifs);
       }
@@ -146,7 +146,7 @@ export default function App() {
 
     // 5. Real-time live listener for Doctor Arrivals
     const unsubArrivals = subscribeToArrivals((liveArrivals) => {
-      if (liveArrivals && liveArrivals.length > 0) {
+      if (Array.isArray(liveArrivals)) {
         setUnannouncedArrivals(liveArrivals);
         saveUnannouncedArrivals(liveArrivals);
       }

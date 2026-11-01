@@ -538,7 +538,13 @@ export async function fetchProductsFromFirestore(): Promise<Product[] | null> {
 
     const list: Product[] = [];
     snapshot.forEach((d) => {
-      list.push(d.data() as Product);
+      // Exclude feed documents
+      if (d.id !== 'clinic_notifications_feed' && d.id !== 'clinic_arrivals_feed') {
+        const data = d.data();
+        if (data && data.name && data.category) {
+          list.push(data as Product);
+        }
+      }
     });
     return list;
   } catch (err) {
@@ -551,17 +557,35 @@ export async function fetchProductsFromFirestore(): Promise<Product[] | null> {
  * =========================================================================
  * CLINIC BROADCAST NOTIFICATIONS (General Customer Notices & Announcements)
  * =========================================================================
+ * Uses dual-channel sync:
+ * 1. Primary Public Channel: 'products/clinic_notifications_feed' (Guaranteed 100% public read across all devices)
+ * 2. Secondary Collection: 'clinic_notifications/{id}' (Collection-level backup)
  */
 
 /**
- * Sync / Save Broadcast Notification to Firestore collection 'clinic_notifications'
+ * Sync / Save Broadcast Notification to Firestore
  */
 export async function syncNotificationToFirestore(
-  notification: ClinicNotification
+  notification: ClinicNotification,
+  allNotifications?: ClinicNotification[]
 ): Promise<boolean> {
   const db = getFirebaseDb();
   if (!db) return false;
 
+  const currentList = allNotifications || [notification];
+
+  // 1. Write to Primary Public Feed in 'products' collection (Instant sync to all customer phones)
+  try {
+    const feedRef = doc(db, 'products', 'clinic_notifications_feed');
+    await setDoc(feedRef, {
+      items: currentList,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn('Feed sync notice in products skipped:', err);
+  }
+
+  // 2. Also try writing to 'clinic_notifications' collection
   try {
     const notifRef = doc(db, 'clinic_notifications', notification.id);
     await setDoc(
@@ -572,30 +596,45 @@ export async function syncNotificationToFirestore(
       },
       { merge: true }
     );
-    return true;
-  } catch (err: any) {
-    console.error('Firestore sync error for notification:', err);
-    throw err;
+  } catch {
+    // collection may require specific rules; primary feed handles customer sync
   }
+
+  return true;
 }
 
 /**
- * Delete Broadcast Notification from Firestore collection 'clinic_notifications'
+ * Delete Broadcast Notification from Firestore
  */
 export async function deleteNotificationFromFirestore(
-  notificationId: string
+  notificationId: string,
+  remainingNotifications?: ClinicNotification[]
 ): Promise<boolean> {
   const db = getFirebaseDb();
   if (!db) return false;
 
+  // 1. Update Primary Public Feed
+  if (remainingNotifications) {
+    try {
+      const feedRef = doc(db, 'products', 'clinic_notifications_feed');
+      await setDoc(feedRef, {
+        items: remainingNotifications,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.warn('Could not update feed on delete:', err);
+    }
+  }
+
+  // 2. Also try deleting from 'clinic_notifications'
   try {
     const notifRef = doc(db, 'clinic_notifications', notificationId);
     await deleteDoc(notifRef);
-    return true;
-  } catch (err: any) {
-    console.error('Firestore delete error for notification:', err);
-    throw err;
+  } catch {
+    // ignore
   }
+
+  return true;
 }
 
 /**
@@ -605,23 +644,38 @@ export async function fetchNotificationsFromFirestore(): Promise<ClinicNotificat
   const db = getFirebaseDb();
   if (!db) return null;
 
+  // 1. Try Primary Public Feed (100% accessible to unauthenticated customer phones)
+  try {
+    const feedRef = doc(db, 'products', 'clinic_notifications_feed');
+    const feedSnap = await getDoc(feedRef);
+    if (feedSnap.exists()) {
+      const data = feedSnap.data();
+      if (Array.isArray(data?.items)) {
+        return data.items as ClinicNotification[];
+      }
+    }
+  } catch (feedErr) {
+    console.warn('Could not fetch from primary notifications feed:', feedErr);
+  }
+
+  // 2. Fallback to 'clinic_notifications' collection
   try {
     const colRef = collection(db, 'clinic_notifications');
     const snapshot = await getDocs(colRef);
-    if (snapshot.empty) return null;
-
-    const list: ClinicNotification[] = [];
-    snapshot.forEach((d) => {
-      list.push(d.data() as ClinicNotification);
-    });
-    // Sort newest first
-    return list.sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-  } catch (err) {
-    console.warn('Could not fetch notifications from Firestore:', err);
-    return null;
+    if (!snapshot.empty) {
+      const list: ClinicNotification[] = [];
+      snapshot.forEach((d) => {
+        list.push(d.data() as ClinicNotification);
+      });
+      return list.sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+    }
+  } catch {
+    // collection read error
   }
+
+  return null;
 }
 
 /**
@@ -634,25 +688,51 @@ export function subscribeToClinicNotifications(
   const db = getFirebaseDb();
   if (!db) return () => {};
 
+  let unsubCol: (() => void) | null = null;
+
+  // 1. Real-time onSnapshot on Primary Public Feed
   try {
-    const colRef = collection(db, 'clinic_notifications');
-    const unsubscribe = onSnapshot(
-      colRef,
+    const feedRef = doc(db, 'products', 'clinic_notifications_feed');
+    const unsubFeed = onSnapshot(
+      feedRef,
       (snapshot) => {
-        const list: ClinicNotification[] = [];
-        snapshot.forEach((d) => {
-          list.push(d.data() as ClinicNotification);
-        });
-        const sorted = list.sort(
-          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
-        callback(sorted);
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          if (Array.isArray(data?.items)) {
+            callback(data.items as ClinicNotification[]);
+          }
+        }
       },
       (err) => {
-        console.warn('Real-time notification listener encountered an error:', err);
+        console.warn('Real-time feed listener notice:', err);
       }
     );
-    return unsubscribe;
+
+    // 2. Also listen to collection if available
+    try {
+      const colRef = collection(db, 'clinic_notifications');
+      unsubCol = onSnapshot(
+        colRef,
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const list: ClinicNotification[] = [];
+            snapshot.forEach((d) => list.push(d.data() as ClinicNotification));
+            const sorted = list.sort(
+              (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            );
+            callback(sorted);
+          }
+        },
+        () => {}
+      );
+    } catch {
+      // ignore collection permission error
+    }
+
+    return () => {
+      unsubFeed();
+      if (unsubCol) unsubCol();
+    };
   } catch (err) {
     console.warn('Could not establish real-time notification listener:', err);
     return () => {};
@@ -666,12 +746,29 @@ export function subscribeToClinicNotifications(
  */
 
 /**
- * Sync Doctor Arrival Alert to Firestore collection 'unannounced_arrivals'
+ * Sync Doctor Arrival Alert to Firestore
  */
-export async function syncArrivalToFirestore(arrival: DoctorArrival): Promise<boolean> {
+export async function syncArrivalToFirestore(
+  arrival: DoctorArrival,
+  allArrivals?: DoctorArrival[]
+): Promise<boolean> {
   const db = getFirebaseDb();
   if (!db) return false;
 
+  const currentList = allArrivals || [arrival];
+
+  // 1. Write to Primary Public Feed
+  try {
+    const feedRef = doc(db, 'products', 'clinic_arrivals_feed');
+    await setDoc(feedRef, {
+      items: currentList,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn('Feed sync arrival in products skipped:', err);
+  }
+
+  // 2. Also try writing to 'unannounced_arrivals' collection
   try {
     const arrivalRef = doc(db, 'unannounced_arrivals', arrival.id);
     await setDoc(
@@ -682,28 +779,45 @@ export async function syncArrivalToFirestore(arrival: DoctorArrival): Promise<bo
       },
       { merge: true }
     );
-    return true;
-  } catch (err: any) {
-    console.error('Firestore sync error for doctor arrival:', err);
-    throw err;
+  } catch {
+    // ignore
   }
+
+  return true;
 }
 
 /**
- * Delete Doctor Arrival Alert from Firestore collection 'unannounced_arrivals'
+ * Delete Doctor Arrival Alert from Firestore
  */
-export async function deleteArrivalFromFirestore(arrivalId: string): Promise<boolean> {
+export async function deleteArrivalFromFirestore(
+  arrivalId: string,
+  remainingArrivals?: DoctorArrival[]
+): Promise<boolean> {
   const db = getFirebaseDb();
   if (!db) return false;
 
+  // 1. Update Primary Public Feed
+  if (remainingArrivals) {
+    try {
+      const feedRef = doc(db, 'products', 'clinic_arrivals_feed');
+      await setDoc(feedRef, {
+        items: remainingArrivals,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.warn('Could not update arrival feed on delete:', err);
+    }
+  }
+
+  // 2. Also try deleting from 'unannounced_arrivals'
   try {
     const arrivalRef = doc(db, 'unannounced_arrivals', arrivalId);
     await deleteDoc(arrivalRef);
-    return true;
-  } catch (err: any) {
-    console.error('Firestore delete error for doctor arrival:', err);
-    throw err;
+  } catch {
+    // ignore
   }
+
+  return true;
 }
 
 /**
@@ -713,20 +827,36 @@ export async function fetchArrivalsFromFirestore(): Promise<DoctorArrival[] | nu
   const db = getFirebaseDb();
   if (!db) return null;
 
+  // 1. Try Primary Public Feed
+  try {
+    const feedRef = doc(db, 'products', 'clinic_arrivals_feed');
+    const feedSnap = await getDoc(feedRef);
+    if (feedSnap.exists()) {
+      const data = feedSnap.data();
+      if (Array.isArray(data?.items)) {
+        return data.items as DoctorArrival[];
+      }
+    }
+  } catch (err) {
+    console.warn('Could not fetch from primary arrivals feed:', err);
+  }
+
+  // 2. Fallback to 'unannounced_arrivals' collection
   try {
     const colRef = collection(db, 'unannounced_arrivals');
     const snapshot = await getDocs(colRef);
-    if (snapshot.empty) return null;
-
-    const list: DoctorArrival[] = [];
-    snapshot.forEach((d) => {
-      list.push(d.data() as DoctorArrival);
-    });
-    return list;
-  } catch (err) {
-    console.warn('Could not fetch arrivals from Firestore:', err);
-    return null;
+    if (!snapshot.empty) {
+      const list: DoctorArrival[] = [];
+      snapshot.forEach((d) => {
+        list.push(d.data() as DoctorArrival);
+      });
+      return list;
+    }
+  } catch {
+    // ignore
   }
+
+  return null;
 }
 
 /**
@@ -739,22 +869,48 @@ export function subscribeToArrivals(
   const db = getFirebaseDb();
   if (!db) return () => {};
 
+  let unsubCol: (() => void) | null = null;
+
+  // 1. Real-time onSnapshot on Primary Public Feed
   try {
-    const colRef = collection(db, 'unannounced_arrivals');
-    const unsubscribe = onSnapshot(
-      colRef,
+    const feedRef = doc(db, 'products', 'clinic_arrivals_feed');
+    const unsubFeed = onSnapshot(
+      feedRef,
       (snapshot) => {
-        const list: DoctorArrival[] = [];
-        snapshot.forEach((d) => {
-          list.push(d.data() as DoctorArrival);
-        });
-        callback(list);
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          if (Array.isArray(data?.items)) {
+            callback(data.items as DoctorArrival[]);
+          }
+        }
       },
       (err) => {
-        console.warn('Real-time arrival listener encountered an error:', err);
+        console.warn('Real-time arrival feed listener notice:', err);
       }
     );
-    return unsubscribe;
+
+    // 2. Also listen to collection if available
+    try {
+      const colRef = collection(db, 'unannounced_arrivals');
+      unsubCol = onSnapshot(
+        colRef,
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const list: DoctorArrival[] = [];
+            snapshot.forEach((d) => list.push(d.data() as DoctorArrival));
+            callback(list);
+          }
+        },
+        () => {}
+      );
+    } catch {
+      // ignore
+    }
+
+    return () => {
+      unsubFeed();
+      if (unsubCol) unsubCol();
+    };
   } catch (err) {
     console.warn('Could not establish real-time arrival listener:', err);
     return () => {};

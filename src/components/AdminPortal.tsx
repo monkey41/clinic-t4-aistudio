@@ -612,7 +612,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
     saveUnannouncedArrivals(updated);
 
     try {
-      await syncArrivalToFirestore(newArrival);
+      await syncArrivalToFirestore(newArrival, updated);
       showToast('Doctor arrival alert synced live to customer phones!');
     } catch (err) {
       console.warn('Arrival Firestore sync error:', err);
@@ -628,7 +628,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
     setUnannouncedArrivals(updated);
     saveUnannouncedArrivals(updated);
     try {
-      await deleteArrivalFromFirestore(id);
+      await deleteArrivalFromFirestore(id, updated);
       showToast('Alert removed from all devices.');
     } catch (err) {
       console.warn('Arrival Firestore delete error:', err);
@@ -695,7 +695,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
     saveClinicNotifications(updated);
 
     try {
-      await syncNotificationToFirestore(newNotice);
+      await syncNotificationToFirestore(newNotice, updated);
       showToast('📢 Broadcast notice sent! Reflecting immediately on customer phones.');
     } catch (err) {
       console.warn('Notification Firestore sync error:', err);
@@ -711,7 +711,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
     setNotifications(updated);
     saveClinicNotifications(updated);
     try {
-      await deleteNotificationFromFirestore(id);
+      await deleteNotificationFromFirestore(id, updated);
       showToast('Notice revoked from customer phones.');
     } catch (err) {
       console.warn('Notification Firestore delete error:', err);
