@@ -19,6 +19,7 @@ import {
 interface PinchAssistantProps {
   updates: PinchUpdate[];
   onOpenChange?: (isOpen: boolean) => void;
+  elevateOnStore?: boolean;
 }
 
 interface ChatMessage {
@@ -37,26 +38,26 @@ const PINCH_QUICK_CARDS: {
   {
     category: 'Doctor visits',
     label: 'Doctor visits',
-    icon: <Stethoscope className="w-4 h-4 text-[#6366F1]" />,
-    tint: 'bg-[#EEF0FF]',
+    icon: <Stethoscope className="w-4 h-4 text-[#059669]" />,
+    tint: 'bg-[#ECFDF5]',
   },
   {
     category: 'Schedule changes',
     label: 'Schedule changes',
-    icon: <CalendarClock className="w-4 h-4 text-[#A855F7]" />,
-    tint: 'bg-[#F5EEFF]',
+    icon: <CalendarClock className="w-4 h-4 text-[#D97706]" />,
+    tint: 'bg-[#FEF3C7]',
   },
   {
     category: 'Pharmacy timings',
     label: 'Pharmacy timings',
-    icon: <Pill className="w-4 h-4 text-[#0EA5E9]" />,
-    tint: 'bg-[#ECFAFF]',
+    icon: <Pill className="w-4 h-4 text-[#059669]" />,
+    tint: 'bg-[#D1FAE5]',
   },
   {
     category: 'Health camps',
     label: 'Health camps',
-    icon: <HeartPulse className="w-4 h-4 text-[#EC4899]" />,
-    tint: 'bg-[#FFF0F6]',
+    icon: <HeartPulse className="w-4 h-4 text-[#D97706]" />,
+    tint: 'bg-[#FEF3C7]',
   },
 ];
 
@@ -66,6 +67,12 @@ const MEDICAL_ADVICE_PATTERNS = [
   /\b(fever|headache|stomach ache|chest pain|cough|cold|vomit|diarrhea|infection|allergy|rash|bp|sugar)\b.*\b(take|eat|use|give|medicine|tablet|which)\b/i,
   /\b(which|what)\b.*\b(medicine|tablet|drug|pill)\b/i,
 ];
+
+const GREETING_PATTERN =
+  /^(hi+|hii+|hello+|helo+|hey+|namaste+|namaskar+|hola|good\s*(morning|afternoon|evening|night)|hru|how are you|what'?s up|sup|yo)[\s!.,?]*$/i;
+
+const THANKS_BYE_PATTERN =
+  /^(thanks|thank you|thx|ty|ok|okay|great|nice|bye|goodbye|see you)[\s!.,?]*$/i;
 
 function formatShortDate(dateStr?: string): string {
   if (!dateStr) return '';
@@ -77,39 +84,37 @@ function formatShortDate(dateStr?: string): string {
 const PinchOrb: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
   const size = compact ? 'w-12 h-12' : 'w-32 h-32';
   const eyeClass = compact
-    ? 'w-1.5 h-3 rounded-full bg-white'
-    : 'w-3.5 h-7 rounded-full bg-white shadow-xs';
+    ? 'w-1.5 h-3 rounded-full bg-white pinch-eye-blink'
+    : 'w-3.5 h-7 rounded-full bg-white shadow-xs pinch-eye-blink';
 
   return (
     <div className="relative flex flex-col items-center justify-center select-none pointer-events-none">
-      {/* Outer luminous pastel halo */}
+      {/* Outer luminous emerald-gold halo */}
       <div
         className={`pinch-orb-halo absolute rounded-full blur-xl ${
           compact ? 'w-14 h-14' : 'w-40 h-40'
         }`}
         style={{
           background:
-            'radial-gradient(circle, rgba(168,85,247,0.42) 0%, rgba(99,102,241,0.35) 55%, rgba(236,72,153,0.18) 100%)',
+            'radial-gradient(circle, rgba(16,185,129,0.42) 0%, rgba(5,150,105,0.28) 55%, rgba(245,158,11,0.22) 100%)',
         }}
       />
 
-      {/* Iridescent glowing orb sphere */}
+      {/* Alive breathing emerald & mint sphere */}
       <div
         className={`pinch-orb-float relative ${size} rounded-full flex items-center justify-center shadow-xl`}
         style={{
           background:
-            'radial-gradient(circle at 30% 25%, #F5D0FE 0%, #C084FC 28%, #8B5CF6 62%, #60A5FA 100%)',
+            'radial-gradient(circle at 28% 24%, #FEF3C7 0%, #6EE7B7 28%, #10B981 62%, #065F46 100%)',
           boxShadow: compact
-            ? '0 6px 18px rgba(109, 74, 255, 0.35), inset 0 2px 6px rgba(255,255,255,0.7)'
-            : '0 22px 44px -10px rgba(99, 102, 241, 0.45), inset 0 6px 18px rgba(255,255,255,0.75)',
+            ? '0 6px 18px rgba(5, 150, 105, 0.35), inset 0 2px 6px rgba(255,255,255,0.7)'
+            : '0 22px 44px -10px rgba(5, 150, 105, 0.45), inset 0 6px 18px rgba(255,255,255,0.75)',
         }}
       >
-        {/* Inner translucent rim ring */}
         <div
-          className="absolute inset-1 rounded-full border border-white/55 pointer-events-none"
+          className="absolute inset-1 rounded-full border border-white/60 pointer-events-none"
           aria-hidden="true"
         />
-        {/* Cute vertical pill eyes */}
         <div className={`relative z-10 flex items-center ${compact ? 'gap-1.5' : 'gap-4'}`}>
           <span className={eyeClass} />
           <span className={eyeClass} />
@@ -120,7 +125,7 @@ const PinchOrb: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
         <div
           className="mt-4 w-24 h-2.5 rounded-full blur-sm opacity-45"
           style={{
-            background: 'radial-gradient(ellipse, #6366F1 0%, transparent 72%)',
+            background: 'radial-gradient(ellipse, #059669 0%, transparent 72%)',
           }}
         />
       )}
@@ -128,7 +133,11 @@ const PinchOrb: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
   );
 };
 
-export const PinchAssistant: React.FC<PinchAssistantProps> = ({ updates, onOpenChange }) => {
+export const PinchAssistant: React.FC<PinchAssistantProps> = ({
+  updates,
+  onOpenChange,
+  elevateOnStore = false,
+}) => {
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
   const [showTopicsDrawer, setShowTopicsDrawer] = useState(false);
@@ -193,7 +202,29 @@ export const PinchAssistant: React.FC<PinchAssistantProps> = ({ updates, onOpenC
     setInput('');
     setShowTopicsDrawer(false);
 
-    // 1. Refuse medical/medicine advice strictly
+    // 1. Basic Hi / Hello / Welcome greeting
+    if (GREETING_PATTERN.test(query)) {
+      const countText =
+        activeUpdates.length > 0
+          ? `There ${activeUpdates.length === 1 ? 'is 1 active clinic update' : `are ${activeUpdates.length} active clinic updates`} right now. Tap + or ask about Doctor visits, Schedule changes, Pharmacy timings, or Health camps!`
+          : 'Tap + below or ask me about Doctor visits, Schedule changes, Pharmacy timings, or Health camps anytime.';
+      appendTurn(
+        query,
+        `Hello! Welcome to Life Care Medicine Store & Poly Clinic. I'm PINCH, your clinic updates helper. ${countText}`
+      );
+      return;
+    }
+
+    // 2. Polite thanks / acknowledgement
+    if (THANKS_BYE_PATTERN.test(query)) {
+      appendTurn(
+        query,
+        "You're welcome! Wishing you good health. Ask anytime if you need clinic updates."
+      );
+      return;
+    }
+
+    // 3. Refuse medical/medicine advice strictly
     if (MEDICAL_ADVICE_PATTERNS.some((rx) => rx.test(query))) {
       appendTurn(
         query,
@@ -209,13 +240,13 @@ export const PinchAssistant: React.FC<PinchAssistantProps> = ({ updates, onOpenC
 
     const qLower = query.toLowerCase();
 
-    // 2. General "latest / today / updates / all" intent
+    // 4. General "latest / updates / all" intent
     if (/\b(all updates|latest|news|anything new|what.?s new|clinic updates)\b/i.test(qLower)) {
       appendTurn(query, 'Here are the current clinic updates:', activeUpdates);
       return;
     }
 
-    // 3. Intent + keyword scoring strictly over admin-published activeUpdates
+    // 5. Intent + keyword scoring strictly over admin-published activeUpdates
     const categoryHints: { cat: PinchCategory; terms: string[] }[] = [
       {
         cat: 'Doctor visits',
@@ -310,32 +341,32 @@ export const PinchAssistant: React.FC<PinchAssistantProps> = ({ updates, onOpenC
     >
       {/* Dimmed Backdrop */}
       <div
-        className="fixed inset-0 bg-[#1E1B4B]/40 backdrop-blur-xs"
+        className="fixed inset-0 bg-[#122B22]/45 backdrop-blur-xs"
         onClick={() => setOpenState(false)}
       />
 
-      {/* PINCH Screen Container matching Reference Design */}
+      {/* PINCH Screen Container in 65% Ivory/White, 25% Emerald/Mint, 10% Gold */}
       <div
-        className="relative z-10 w-full max-w-md h-[90vh] sm:h-[660px] max-h-[92vh] rounded-t-[36px] sm:rounded-[36px] shadow-2xl border border-white/80 flex flex-col overflow-hidden"
+        className="relative z-10 w-full max-w-md h-[90vh] sm:h-[660px] max-h-[92vh] rounded-t-[36px] sm:rounded-[36px] shadow-2xl border border-[#EAE4D3] flex flex-col overflow-hidden"
         style={{
           background:
-            'radial-gradient(circle at 85% 12%, rgba(167,184,255,0.5) 0%, transparent 45%), radial-gradient(circle at 12% 38%, rgba(221,196,255,0.5) 0%, transparent 50%), linear-gradient(180deg, #ECEBFF 0%, #EFE9FF 55%, #FCF1F7 100%)',
+            'radial-gradient(circle at 86% 12%, rgba(16,185,129,0.18) 0%, transparent 44%), radial-gradient(circle at 12% 38%, rgba(245,158,11,0.12) 0%, transparent 48%), linear-gradient(180deg, #FCFBF7 0%, #F7F4EC 58%, #ECFDF5 100%)',
         }}
       >
-        {/* Minimal Floating Header (NO Call button) */}
+        {/* Minimal Header (NO Call button) */}
         <div className="px-5 pt-4 pb-2 flex items-center justify-between shrink-0">
           {hasChatStarted ? (
             <button
               type="button"
               onClick={() => setMessages([])}
               aria-label="Back to PINCH home"
-              className="w-10 h-10 rounded-full bg-white/85 hover:bg-white shadow-sm border border-white flex items-center justify-center text-[#3B3F7D] cursor-pointer transition-transform active:scale-95"
+              className="w-10 h-10 rounded-full bg-white hover:bg-[#ECFDF5] shadow-sm border border-[#EAE4D3] flex items-center justify-center text-[#122B22] cursor-pointer transition-transform active:scale-95"
               title="New Topic"
             >
               <RotateCcw className="w-4 h-4" />
             </button>
           ) : (
-            <div className="px-3 py-1.5 rounded-full bg-white/75 border border-white text-[11px] font-extrabold text-[#5B5FC7] shadow-2xs">
+            <div className="px-3 py-1.5 rounded-full bg-[#ECFDF5] border border-[#A7F3D0] text-[11px] font-extrabold text-[#065F46] shadow-2xs">
               PINCH
             </div>
           )}
@@ -344,7 +375,7 @@ export const PinchAssistant: React.FC<PinchAssistantProps> = ({ updates, onOpenC
             type="button"
             onClick={() => setOpenState(false)}
             aria-label="Close PINCH"
-            className="w-10 h-10 rounded-full bg-white/85 hover:bg-white shadow-sm border border-white flex items-center justify-center text-[#3B3F7D] cursor-pointer transition-transform active:scale-95"
+            className="w-10 h-10 rounded-full bg-white hover:bg-[#ECFDF5] shadow-sm border border-[#EAE4D3] flex items-center justify-center text-[#122B22] cursor-pointer transition-transform active:scale-95"
           >
             <X className="w-5 h-5" />
           </button>
@@ -353,22 +384,18 @@ export const PinchAssistant: React.FC<PinchAssistantProps> = ({ updates, onOpenC
         {/* Scrollable Content Stage */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 pb-3 flex flex-col">
           {!hasChatStarted ? (
-            /* Initial Greeting Screen matching Reference Screenshot */
             <div className="flex-1 flex flex-col items-center justify-between py-2">
-              {/* Greeting Text */}
               <div className="text-center space-y-1 mt-1">
-                <p className="text-sm font-bold text-[#6366F1]">Hello there!</p>
-                <h3 className="text-[22px] font-black tracking-tight text-[#1E2252] leading-tight">
+                <p className="text-sm font-bold text-[#059669]">Hello there!</p>
+                <h3 className="text-[22px] font-black tracking-tight text-[#122B22] leading-tight">
                   How can I help you today?
                 </h3>
               </div>
 
-              {/* Centerpiece Glowing Iridescent Orb */}
               <div className="my-4">
                 <PinchOrb />
               </div>
 
-              {/* 2x2 Quick Option Cards + General / All */}
               <div className="w-full space-y-2.5">
                 <div className="grid grid-cols-2 gap-2.5">
                   {PINCH_QUICK_CARDS.map((card) => (
@@ -376,14 +403,14 @@ export const PinchAssistant: React.FC<PinchAssistantProps> = ({ updates, onOpenC
                       key={card.category}
                       type="button"
                       onClick={() => handleCategorySelect(card.category)}
-                      className="min-h-[52px] px-3 py-2.5 rounded-2xl bg-white/88 hover:bg-white border border-white shadow-xs flex items-center gap-2.5 text-left transition-transform active:scale-97 cursor-pointer"
+                      className="min-h-[52px] px-3 py-2.5 rounded-2xl bg-white hover:bg-[#ECFDF5]/60 border border-[#EAE4D3] shadow-xs flex items-center gap-2.5 text-left transition-transform active:scale-97 cursor-pointer"
                     >
                       <span
                         className={`w-8 h-8 rounded-xl ${card.tint} flex items-center justify-center shrink-0`}
                       >
                         {card.icon}
                       </span>
-                      <span className="text-xs font-extrabold text-[#1E2252] leading-tight">
+                      <span className="text-xs font-extrabold text-[#122B22] leading-tight">
                         {card.label}
                       </span>
                     </button>
@@ -394,15 +421,15 @@ export const PinchAssistant: React.FC<PinchAssistantProps> = ({ updates, onOpenC
                   <button
                     type="button"
                     onClick={() => handleCategorySelect('General announcements')}
-                    className="flex-1 py-2.5 px-3 rounded-2xl bg-white/82 hover:bg-white border border-white text-[11px] font-extrabold text-[#3B3F7D] flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                    className="flex-1 py-2.5 px-3 rounded-2xl bg-white hover:bg-[#F7F4EC] border border-[#EAE4D3] text-[11px] font-extrabold text-[#122B22] flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                   >
-                    <Megaphone className="w-3.5 h-3.5 text-[#8B5CF6]" />
+                    <Megaphone className="w-3.5 h-3.5 text-[#D97706]" />
                     <span>General announcements</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleCategorySelect('All')}
-                    className="py-2.5 px-4 rounded-2xl bg-gradient-to-r from-[#A855F7] to-[#6366F1] text-white text-[11px] font-extrabold shadow-xs cursor-pointer whitespace-nowrap"
+                    className="py-2.5 px-4 rounded-2xl bg-gradient-to-r from-[#059669] to-[#10B981] text-white text-[11px] font-extrabold shadow-xs cursor-pointer whitespace-nowrap"
                   >
                     All ({activeUpdates.length})
                   </button>
@@ -410,13 +437,12 @@ export const PinchAssistant: React.FC<PinchAssistantProps> = ({ updates, onOpenC
               </div>
             </div>
           ) : (
-            /* Active Conversation Thread */
             <div className="space-y-3 pt-1 pb-2">
               <div className="flex items-center justify-center gap-2.5 pb-1">
                 <PinchOrb compact />
                 <div className="text-left">
-                  <p className="text-xs font-black text-[#1E2252]">PINCH Clinic Updates</p>
-                  <p className="text-[10px] font-semibold text-[#6366F1]">
+                  <p className="text-xs font-black text-[#122B22]">PINCH Clinic Updates</p>
+                  <p className="text-[10px] font-semibold text-[#059669]">
                     Official Life Care Announcements
                   </p>
                 </div>
@@ -432,8 +458,8 @@ export const PinchAssistant: React.FC<PinchAssistantProps> = ({ updates, onOpenC
                   <div
                     className={`max-w-[86%] rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed shadow-2xs ${
                       m.sender === 'user'
-                        ? 'bg-gradient-to-r from-[#8B5CF6] to-[#6366F1] text-white font-semibold rounded-br-sm'
-                        : 'bg-white/90 border border-white text-[#1E2252] font-medium rounded-bl-sm'
+                        ? 'bg-gradient-to-r from-[#059669] to-[#10B981] text-white font-semibold rounded-br-sm'
+                        : 'bg-white border border-[#EAE4D3] text-[#122B22] font-medium rounded-bl-sm'
                     }`}
                   >
                     {m.text}
@@ -444,33 +470,33 @@ export const PinchAssistant: React.FC<PinchAssistantProps> = ({ updates, onOpenC
                       {m.matchedUpdates.map((upd) => (
                         <div
                           key={upd.id}
-                          className="bg-white/92 rounded-2xl p-3.5 border border-white shadow-xs space-y-1.5"
+                          className="bg-white rounded-2xl p-3.5 border border-[#EAE4D3] shadow-xs space-y-1.5"
                         >
-                          <div className="flex items-center justify-between gap-2 text-[11px] text-[#6D4AFF] font-bold">
+                          <div className="flex items-center justify-between gap-2 text-[11px] text-[#059669] font-bold">
                             <span>{upd.category}</span>
                             {upd.expiryDate && (
-                              <span className="text-slate-400 font-medium">
+                              <span className="text-[#7C8F86] font-medium">
                                 Valid till {formatShortDate(upd.expiryDate)}
                               </span>
                             )}
                           </div>
-                          <h4 className="font-black text-xs text-[#1E2252] leading-snug">
+                          <h4 className="font-black text-xs text-[#122B22] leading-snug">
                             {upd.title}
                           </h4>
-                          <p className="text-[11px] text-slate-600 leading-relaxed">
+                          <p className="text-[11px] text-[#4B6358] leading-relaxed">
                             {upd.description}
                           </p>
                           {(upd.date || upd.timing) && (
-                            <div className="pt-1.5 border-t border-slate-100 flex flex-wrap items-center gap-3 text-[11px] font-semibold text-[#1E2252]">
+                            <div className="pt-1.5 border-t border-[#EAE4D3] flex flex-wrap items-center gap-3 text-[11px] font-semibold text-[#122B22]">
                               {upd.date && (
                                 <span className="flex items-center gap-1">
-                                  <Calendar className="w-3 h-3 text-[#8B5CF6]" />
+                                  <Calendar className="w-3 h-3 text-[#059669]" />
                                   {formatShortDate(upd.date)}
                                 </span>
                               )}
                               {upd.timing && (
                                 <span className="flex items-center gap-1">
-                                  <Clock className="w-3 h-3 text-[#6366F1]" />
+                                  <Clock className="w-3 h-3 text-[#D97706]" />
                                   {upd.timing}
                                 </span>
                               )}
@@ -486,13 +512,13 @@ export const PinchAssistant: React.FC<PinchAssistantProps> = ({ updates, onOpenC
           )}
         </div>
 
-        {/* Optional Quick Topics Pop-bar (Triggered by + button) */}
+        {/* Optional Quick Topics Pop-bar */}
         {showTopicsDrawer && (
-          <div className="mx-4 mb-2 p-2.5 rounded-2xl bg-white/95 border border-white shadow-md flex flex-wrap gap-1.5">
+          <div className="mx-4 mb-2 p-2.5 rounded-2xl bg-white border border-[#EAE4D3] shadow-md flex flex-wrap gap-1.5">
             <button
               type="button"
               onClick={() => handleCategorySelect('All')}
-              className="px-2.5 py-1 rounded-xl bg-gradient-to-r from-[#A855F7] to-[#6366F1] text-white text-[11px] font-bold cursor-pointer"
+              className="px-2.5 py-1 rounded-xl bg-gradient-to-r from-[#059669] to-[#10B981] text-white text-[11px] font-bold cursor-pointer"
             >
               All updates
             </button>
@@ -501,7 +527,7 @@ export const PinchAssistant: React.FC<PinchAssistantProps> = ({ updates, onOpenC
                 key={c.category}
                 type="button"
                 onClick={() => handleCategorySelect(c.category)}
-                className="px-2.5 py-1 rounded-xl bg-[#F4F1FF] text-[#3B3F7D] text-[11px] font-bold cursor-pointer hover:bg-[#EAE3FF]"
+                className="px-2.5 py-1 rounded-xl bg-[#ECFDF5] text-[#065F46] text-[11px] font-bold cursor-pointer hover:bg-[#D1FAE5]"
               >
                 {c.label}
               </button>
@@ -509,14 +535,14 @@ export const PinchAssistant: React.FC<PinchAssistantProps> = ({ updates, onOpenC
             <button
               type="button"
               onClick={() => handleCategorySelect('General announcements')}
-              className="px-2.5 py-1 rounded-xl bg-[#F4F1FF] text-[#3B3F7D] text-[11px] font-bold cursor-pointer hover:bg-[#EAE3FF]"
+              className="px-2.5 py-1 rounded-xl bg-[#FEF3C7] text-[#92400E] text-[11px] font-bold cursor-pointer hover:bg-[#FDE68A]"
             >
               General announcements
             </button>
           </div>
         )}
 
-        {/* Bottom Capsule Input Bar matching Reference Screenshot */}
+        {/* Bottom Capsule Input Bar */}
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -524,12 +550,12 @@ export const PinchAssistant: React.FC<PinchAssistantProps> = ({ updates, onOpenC
           }}
           className="px-4 pb-4 pt-1 flex items-center gap-2.5 shrink-0"
         >
-          <div className="flex-1 flex items-center gap-2 bg-white/95 border border-white rounded-full pl-2 pr-4 py-1.5 shadow-sm">
+          <div className="flex-1 flex items-center gap-2 bg-white border border-[#EAE4D3] rounded-full pl-2 pr-4 py-1.5 shadow-sm">
             <button
               type="button"
               onClick={() => setShowTopicsDrawer((prev) => !prev)}
               aria-label="Quick clinic topics"
-              className="w-8 h-8 rounded-full bg-[#ECEBFF] hover:bg-[#E0DEFF] text-[#5B5FC7] flex items-center justify-center shrink-0 cursor-pointer transition-colors"
+              className="w-8 h-8 rounded-full bg-[#ECFDF5] hover:bg-[#D1FAE5] text-[#059669] flex items-center justify-center shrink-0 cursor-pointer transition-colors"
             >
               <Plus className="w-4 h-4" />
             </button>
@@ -537,8 +563,8 @@ export const PinchAssistant: React.FC<PinchAssistantProps> = ({ updates, onOpenC
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask PINCH about clinic updates..."
-              className="flex-1 bg-transparent text-xs font-semibold text-[#1E2252] placeholder:text-slate-400 focus:outline-none min-w-0"
+              placeholder="Say hi or ask about clinic updates..."
+              className="flex-1 bg-transparent text-xs font-semibold text-[#122B22] placeholder:text-[#8A9B93] focus:outline-none min-w-0"
             />
           </div>
 
@@ -546,7 +572,7 @@ export const PinchAssistant: React.FC<PinchAssistantProps> = ({ updates, onOpenC
             type="submit"
             disabled={!input.trim()}
             aria-label="Send message"
-            className="w-11 h-11 rounded-full bg-gradient-to-br from-[#A855F7] via-[#8B5CF6] to-[#6366F1] disabled:opacity-45 text-white shadow-md shadow-indigo-500/30 flex items-center justify-center shrink-0 cursor-pointer transition-transform active:scale-95"
+            className="w-11 h-11 rounded-full bg-gradient-to-br from-[#065F46] via-[#059669] to-[#D97706] disabled:opacity-45 text-white shadow-md shadow-emerald-900/25 flex items-center justify-center shrink-0 cursor-pointer transition-transform active:scale-95"
           >
             <Send className="w-4 h-4" />
           </button>
@@ -557,29 +583,44 @@ export const PinchAssistant: React.FC<PinchAssistantProps> = ({ updates, onOpenC
 
   return (
     <>
-      {/* Floating Luminous PINCH Trigger Button (Bottom Left) */}
+      {/* Floating Alive PINCH Trigger Button (Right Side, Higher Up Above Bottom Bar) */}
       {!isOpen && (
         <button
           type="button"
           onClick={() => setOpenState(true)}
           aria-label="Open PINCH clinic updates assistant"
-          className="fixed bottom-20 left-4 z-40 min-h-[46px] pl-2 pr-3.5 py-1.5 rounded-full bg-white/92 backdrop-blur-md text-[#1E2252] shadow-lg shadow-indigo-500/20 border border-white flex items-center gap-2 font-black text-xs tracking-wide transition-transform active:scale-95 hover:scale-103 cursor-pointer"
+          className={`fixed ${
+            elevateOnStore ? 'bottom-36' : 'bottom-24'
+          } right-4 z-40 min-h-[48px] pl-2 pr-3.5 py-1.5 rounded-full bg-[#FCFBF7]/95 backdrop-blur-md text-[#122B22] shadow-xl shadow-emerald-950/18 border border-[#A7F3D0] flex items-center gap-2 font-black text-xs tracking-wide transition-all active:scale-95 hover:scale-104 cursor-pointer pinch-orb-float`}
         >
-          <span
-            className="w-8 h-8 rounded-full flex items-center justify-center shadow-xs shrink-0"
-            style={{
-              background:
-                'radial-gradient(circle at 30% 25%, #F5D0FE 0%, #A855F7 45%, #6366F1 100%)',
-            }}
-          >
-            <span className="flex items-center gap-1">
-              <span className="w-1 h-2.5 rounded-full bg-white" />
-              <span className="w-1 h-2.5 rounded-full bg-white" />
+          {/* Alive Emerald-Gold Glowing Orb with Blinking Eyes */}
+          <span className="relative w-9 h-9 flex items-center justify-center shrink-0">
+            <span
+              aria-hidden="true"
+              className="pinch-orb-halo absolute inset-0 rounded-full blur-xs"
+              style={{
+                background:
+                  'radial-gradient(circle, rgba(16,185,129,0.55) 0%, rgba(245,158,11,0.35) 100%)',
+              }}
+            />
+            <span
+              className="relative w-8 h-8 rounded-full flex items-center justify-center shadow-sm border border-white/70"
+              style={{
+                background:
+                  'radial-gradient(circle at 28% 24%, #FEF3C7 0%, #34D399 42%, #059669 100%)',
+              }}
+            >
+              <span className="flex items-center gap-1">
+                <span className="w-1 h-2.5 rounded-full bg-white pinch-eye-blink" />
+                <span className="w-1 h-2.5 rounded-full bg-white pinch-eye-blink" />
+              </span>
             </span>
           </span>
-          <span>PINCH</span>
+
+          <span className="text-[#122B22]">PINCH</span>
+
           {activeUpdates.length > 0 && (
-            <span className="px-1.5 py-0.5 rounded-full bg-[#EDE8FC] text-[#6D4AFF] text-[10px] font-black tabular-nums">
+            <span className="px-1.5 py-0.5 rounded-full bg-[#FEF3C7] border border-[#FDE68A] text-[#92400E] text-[10px] font-black tabular-nums">
               {activeUpdates.length}
             </span>
           )}

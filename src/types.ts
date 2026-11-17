@@ -15,7 +15,7 @@ export interface Doctor {
 export interface Product {
   id: string;
   name: string;
-  category: 'medicines' | 'physio' | 'wellness' | 'babycare';
+  category: 'medicines' | 'physio' | 'wellness' | 'babycare' | 'skincare';
   price: number;
   originalPrice?: number;
   unit: string;
@@ -117,6 +117,7 @@ export interface StoreOrder {
   id: string;
   customerName: string;
   customerPhone: string;
+  customerAddress?: string;
   items: StoreOrderItem[];
   totalAmount: number;
   source: 'whatsapp' | 'walk-in';
@@ -182,6 +183,14 @@ export interface ClinicPromotionsConfig {
     festival: FestiveThemeId;
     presetAssetId: string;
     intensity: 'subtle' | 'festive';
+  };
+  topShowcase?: {
+    enabled: boolean;
+    title: string;
+    subtitle: string;
+    mediaUrls: string[];
+    ctaLabel: string;
+    ctaTab: PromoLinkTab;
   };
   footerShowcase: {
     enabled: boolean;

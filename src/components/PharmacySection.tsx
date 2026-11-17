@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Product, CartItem } from '../types';
 import {
   ShoppingBag,
@@ -9,6 +9,8 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  MapPin,
+  AlertCircle,
 } from 'lucide-react';
 import { CLINIC_CONFIG, getThemePalette, addStoreOrder } from '../data/clinicData';
 import { syncCustomerOrderToFirestore } from '../services/firebase';
@@ -16,7 +18,7 @@ import { syncCustomerOrderToFirestore } from '../services/firebase';
 interface PharmacySectionProps {
   products: Product[];
   t: Record<string, string>;
-  defaultCategory?: 'all' | 'physio' | 'medicines';
+  defaultCategory?: string;
 }
 
 export const PharmacySection: React.FC<PharmacySectionProps> = ({
@@ -28,9 +30,35 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
-  const [customerName, setCustomerName] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerName, setCustomerName] = useState(() => {
+    try {
+      return localStorage.getItem('lifecare_customer_name') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [customerPhone, setCustomerPhone] = useState(() => {
+    try {
+      return localStorage.getItem('lifecare_customer_phone') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [customerAddress, setCustomerAddress] = useState(() => {
+    try {
+      return localStorage.getItem('lifecare_customer_address') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [addressPromptError, setAddressPromptError] = useState<string | null>(null);
+
   const categoryScrollRef = useRef<HTMLDivElement>(null);
+  const addressInputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    setSelectedCategory(defaultCategory);
+  }, [defaultCategory]);
 
   const theme = getThemePalette();
 
@@ -43,10 +71,11 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
 
   const categories = [
     { id: 'all', label: t.allCategories || 'All Products', icon: '🏪' },
+    { id: 'skincare', label: 'Skin Care', icon: '✨' },
+    { id: 'babycare', label: 'Baby Products', icon: '👶' },
+    { id: 'medicines', label: 'Medicines', icon: '💊' },
     { id: 'physio', label: t.physio || 'Physiotherapy', icon: '🦵' },
-    { id: 'medicines', label: t.pharmacy || 'Pharmacy & Meds', icon: '💊' },
-    { id: 'wellness', label: 'Immunity & Wellness', icon: '🍊' },
-    { id: 'babycare', label: 'Baby Care', icon: '👶' },
+    { id: 'wellness', label: 'Wellness', icon: '🍊' },
   ];
 
   const filteredProducts = products.filter((p) => {
@@ -96,12 +125,34 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
   );
   const totalItems = cart.reduce((sum, i) => sum + i.quantity, 0);
 
+  const handleSaveCustomerField = (key: string, val: string) => {
+    try {
+      localStorage.setItem(key, val);
+    } catch {
+      // ignore
+    }
+  };
+
   const handleSendWhatsApp = () => {
     if (cart.length === 0) return;
+
+    const trimmedAddress = customerAddress.trim();
+    if (!trimmedAddress) {
+      setAddressPromptError(
+        'Please add your delivery address before placing your order.'
+      );
+      setTimeout(() => {
+        addressInputRef.current?.focus();
+      }, 50);
+      return;
+    }
+
+    setAddressPromptError(null);
 
     const newOrder = addStoreOrder({
       customerName: customerName.trim() || 'WhatsApp Customer',
       customerPhone: customerPhone.trim() || 'Not provided',
+      customerAddress: trimmedAddress,
       items: cart.map((item) => ({
         name: item.product.name,
         quantity: item.quantity,
@@ -123,10 +174,8 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
       )
       .join('\n');
     const msg = `Hello Life Care Medicine Store and Poly Clinic,\nI would like to order:\n\n${itemList}\n\n*Total: ₹${totalAmount}*\nName: ${
-      customerName || 'Customer'
-    }\nPhone: ${
-      customerPhone || 'Not provided'
-    }`;
+      customerName.trim() || 'Customer'
+    }\nPhone: ${customerPhone.trim() || 'Not provided'}\nDelivery Address: ${trimmedAddress}`;
     const url = `https://wa.me/${CLINIC_CONFIG.whatsapp.replace(
       /[^0-9]/g,
       ''
@@ -143,13 +192,23 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
         >
           <span>💊</span> Pharmacy & Supplies
         </h2>
+        {!customerAddress.trim() && (
+          <button
+            type="button"
+            onClick={() => setCartOpen(true)}
+            className="text-[10px] font-extrabold px-2.5 py-1 rounded-full bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A] flex items-center gap-1 cursor-pointer"
+          >
+            <MapPin className="w-3 h-3" />
+            <span>Add Address</span>
+          </button>
+        )}
       </div>
 
-      {/* Single Floating Bag Pill that moves with scrolling */}
+      {/* Floating Bag Pill (Bottom Right below PINCH) */}
       <button
         type="button"
         onClick={() => setCartOpen(true)}
-        className={`fixed bottom-20 right-4 z-30 px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-extrabold transition-all active:scale-95 cursor-pointer border ${theme.primaryBtn}`}
+        className={`fixed bottom-20 right-4 z-35 px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-extrabold transition-all active:scale-95 cursor-pointer border border-white/60 ${theme.primaryBtn}`}
         title="Open Order Bag"
       >
         <ShoppingBag className="w-4 h-4" />
@@ -166,8 +225,8 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search medicines, knee braces, thermometers, baby cream..."
-          className="w-full pl-9 pr-3.5 py-2.5 text-xs rounded-xl focus:outline-hidden shadow-2xs transition-colors border bg-white border-teal-200 text-slate-900 focus:border-teal-700"
+          placeholder="Search medicines, skin care, baby products, physio..."
+          className="w-full pl-9 pr-3.5 py-2.5 text-xs rounded-xl focus:outline-hidden shadow-2xs transition-colors border bg-white border-[#EAE4D3] text-[#122B22] focus:border-[#059669]"
         />
       </div>
 
@@ -186,15 +245,13 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
         <div
           ref={categoryScrollRef}
           className="flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth flex-1 py-0.5"
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
           {categories.map((cat) => {
             const isSelected = selectedCategory === cat.id;
-            let activeColorClass = 'bg-teal-700 text-white border-teal-700 shadow-sm';
-            if (cat.id === 'physio') activeColorClass = 'bg-blue-600 text-white border-blue-600 shadow-sm';
-            if (cat.id === 'medicines') activeColorClass = 'bg-indigo-600 text-white border-indigo-600 shadow-sm';
-            if (cat.id === 'wellness') activeColorClass = 'bg-amber-500 text-slate-950 border-amber-500 shadow-sm font-black';
-            if (cat.id === 'babycare') activeColorClass = 'bg-rose-500 text-white border-rose-500 shadow-sm';
+            const activeColorClass =
+              cat.id === 'wellness'
+                ? 'bg-[#D97706] text-white border-[#D97706] shadow-sm'
+                : 'bg-[#059669] text-white border-[#059669] shadow-sm';
 
             return (
               <button
@@ -202,7 +259,9 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
                 type="button"
                 onClick={() => setSelectedCategory(cat.id)}
                 className={`shrink-0 whitespace-nowrap px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
-                  isSelected ? activeColorClass : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  isSelected
+                    ? activeColorClass
+                    : 'bg-white text-[#122B22] border-[#EAE4D3] hover:bg-[#ECFDF5]'
                 }`}
               >
                 <span>{cat.icon}</span>
@@ -243,7 +302,7 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
           return (
             <div
               key={product.id}
-              className={`rounded-2xl p-3.5 border shadow-xs flex flex-col justify-between hover:shadow-lg transition-all ${theme.cardBg}`}
+              className={`rounded-2xl p-3.5 border shadow-xs flex flex-col justify-between hover:shadow-md transition-all ${theme.cardBg}`}
             >
               <div className="flex gap-3">
                 <div
@@ -284,7 +343,7 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
                       ₹{product.price}
                     </span>
                     {product.originalPrice && (
-                      <span className="text-[10px] text-slate-400 line-through">
+                      <span className="text-[10px] text-[#7C8F86] line-through">
                         ₹{product.originalPrice}
                       </span>
                     )}
@@ -301,7 +360,7 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
                     <button
                       type="button"
                       onClick={() => updateQuantity(product.id, -1)}
-                      className="w-6 h-6 rounded bg-white text-slate-900 flex items-center justify-center font-bold text-xs shadow-2xs cursor-pointer"
+                      className="w-7 h-7 rounded bg-white text-[#122B22] flex items-center justify-center font-bold text-xs shadow-2xs cursor-pointer"
                     >
                       <Minus className="w-3 h-3" />
                     </button>
@@ -311,7 +370,7 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
                     <button
                       type="button"
                       onClick={() => updateQuantity(product.id, 1)}
-                      className={`w-6 h-6 rounded flex items-center justify-center font-bold text-xs shadow-2xs cursor-pointer ${theme.primaryBtn}`}
+                      className={`w-7 h-7 rounded flex items-center justify-center font-bold text-xs shadow-2xs cursor-pointer ${theme.primaryBtn}`}
                     >
                       <Plus className="w-3 h-3" />
                     </button>
@@ -320,7 +379,7 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
                   <button
                     type="button"
                     onClick={() => addToCart(product)}
-                    className={`active:scale-95 text-xs font-bold px-3 py-1.5 rounded-xl transition-all flex items-center gap-1 cursor-pointer ${theme.primaryBtn}`}
+                    className={`active:scale-95 text-xs font-bold px-3.5 py-2 rounded-xl transition-all flex items-center gap-1 cursor-pointer ${theme.primaryBtn}`}
                   >
                     <Plus className="w-3 h-3" />
                     <span>{t.addToCart || 'Add'}</span>
@@ -349,49 +408,65 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
         </div>
       )}
 
-      {/* Cart Modal / Drawer */}
+      {/* Order Bag Modal (Requires Delivery Address before ordering) */}
       {cartOpen && (
         <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center"
+          className="fixed inset-0 bg-[#122B22]/50 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center"
           onClick={() => setCartOpen(false)}
         >
           <div
-            className={`w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 max-h-[85vh] flex flex-col justify-between shadow-2xl animate-in slide-in-from-bottom duration-200 border ${theme.cardBg}`}
+            className="w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 max-h-[88vh] flex flex-col justify-between shadow-2xl animate-in slide-in-from-bottom duration-200 border border-[#EAE4D3] bg-[#FCFBF7]"
             onClick={(e) => e.stopPropagation()}
           >
             <div>
-              <div className={`flex items-center justify-between pb-3 border-b ${theme.border}`}>
+              <div className="flex items-center justify-between pb-3 border-b border-[#EAE4D3]">
                 <div className="flex items-center gap-2">
-                  <ShoppingBag className={`w-5 h-5 ${theme.accentText}`} />
-                  <h3 className={`font-bold text-base ${theme.headingText}`}>
+                  <ShoppingBag className="w-5 h-5 text-[#059669]" />
+                  <h3 className="font-bold text-base text-[#122B22]">
                     Your Order Bag
                   </h3>
                 </div>
                 <button
                   type="button"
                   onClick={() => setCartOpen(false)}
-                  className={`text-xs font-bold p-1 cursor-pointer ${theme.subText}`}
+                  className="text-xs font-bold p-1 cursor-pointer text-[#4B6358]"
                 >
                   ✕ Close
                 </button>
               </div>
 
               {cart.length === 0 ? (
-                <div className={`py-12 text-center text-xs ${theme.subText}`}>
-                  Your bag is currently empty. Add medicines or physiotherapy products.
+                <div className="py-10 text-center text-xs text-[#4B6358] space-y-3">
+                  <p>Your bag is currently empty. Add medicines or products to order.</p>
+                  <div className="text-left p-3 rounded-2xl bg-white border border-[#EAE4D3] space-y-1.5">
+                    <label className="text-[11px] font-black text-[#122B22] flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5 text-[#059669]" />
+                      <span>Saved Delivery Address</span>
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={customerAddress}
+                      onChange={(e) => {
+                        setCustomerAddress(e.target.value);
+                        handleSaveCustomerField('lifecare_customer_address', e.target.value);
+                      }}
+                      placeholder="House/Flat No., Street, Landmark, Baripada..."
+                      className="w-full px-3 py-2 text-xs border border-[#EAE4D3] rounded-xl bg-[#FCFBF7] text-[#122B22] focus:outline-[#059669]"
+                    />
+                  </div>
                 </div>
               ) : (
-                <div className={`divide-y max-h-[35vh] overflow-y-auto my-2 pr-1 ${theme.border}`}>
+                <div className="divide-y divide-[#EAE4D3] max-h-[28vh] overflow-y-auto my-2 pr-1">
                   {cart.map((item) => (
                     <div
                       key={item.product.id}
                       className="py-2.5 flex items-center justify-between"
                     >
                       <div className="flex-1 pr-2">
-                        <span className={`text-xs font-bold block line-clamp-1 ${theme.headingText}`}>
+                        <span className="text-xs font-bold block line-clamp-1 text-[#122B22]">
                           {item.product.name}
                         </span>
-                        <span className={`text-[11px] font-semibold ${theme.accentText}`}>
+                        <span className="text-[11px] font-semibold text-[#059669]">
                           ₹{item.product.price} × {item.quantity} = ₹
                           {item.product.price * item.quantity}
                         </span>
@@ -400,7 +475,7 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
                         <button
                           type="button"
                           onClick={() => updateQuantity(item.product.id, -1)}
-                          className={`w-6 h-6 rounded text-xs font-bold flex items-center justify-center border ${theme.subtleBg}`}
+                          className="w-6 h-6 rounded text-xs font-bold flex items-center justify-center border border-[#EAE4D3] bg-[#F7F4EC] text-[#122B22]"
                         >
                           -
                         </button>
@@ -415,7 +490,7 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
                         <button
                           type="button"
                           onClick={() => removeFromCart(item.product.id)}
-                          className="p-1 text-red-400 hover:text-red-500 ml-1"
+                          className="p-1 text-rose-500 hover:text-rose-600 ml-1"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -427,33 +502,81 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
             </div>
 
             {cart.length > 0 && (
-              <div className={`pt-3 border-t space-y-3 ${theme.border}`}>
-                <div className={`flex items-center justify-between text-sm font-bold ${theme.headingText}`}>
+              <div className="pt-3 border-t border-[#EAE4D3] space-y-2.5">
+                <div className="flex items-center justify-between text-sm font-bold text-[#122B22]">
                   <span>Estimated Total</span>
-                  <span className={`text-base ${theme.accentText}`}>₹{totalAmount}</span>
+                  <span className="text-base text-[#059669]">₹{totalAmount}</span>
                 </div>
 
+                {addressPromptError && (
+                  <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 text-[11px] font-extrabold flex items-center gap-2 animate-in fade-in">
+                    <AlertCircle className="w-4 h-4 text-[#D97706] shrink-0" />
+                    <span>{addressPromptError}</span>
+                  </div>
+                )}
+
                 <div className="space-y-2">
-                  <input
-                    type="text"
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Your Name (Optional)"
-                    className={`w-full px-3 py-2 text-xs border rounded-xl ${theme.subtleBg}`}
-                  />
-                  <input
-                    type="tel"
-                    value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value)}
-                    placeholder="Mobile Number for Delivery / Confirmation"
-                    className={`w-full px-3 py-2 text-xs border rounded-xl ${theme.subtleBg}`}
-                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      value={customerName}
+                      onChange={(e) => {
+                        setCustomerName(e.target.value);
+                        handleSaveCustomerField('lifecare_customer_name', e.target.value);
+                      }}
+                      placeholder="Your Name"
+                      className="w-full px-3 py-2 text-xs border border-[#EAE4D3] rounded-xl bg-white text-[#122B22]"
+                    />
+                    <input
+                      type="tel"
+                      value={customerPhone}
+                      onChange={(e) => {
+                        setCustomerPhone(e.target.value);
+                        handleSaveCustomerField('lifecare_customer_phone', e.target.value);
+                      }}
+                      placeholder="Mobile Number"
+                      className="w-full px-3 py-2 text-xs border border-[#EAE4D3] rounded-xl bg-white text-[#122B22]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-black text-[#122B22] flex items-center justify-between mb-1">
+                      <span className="flex items-center gap-1">
+                        <MapPin className="w-3.5 h-3.5 text-[#059669]" />
+                        <span>Delivery Address *</span>
+                      </span>
+                      {!customerAddress.trim() && (
+                        <span className="text-[10px] text-[#D97706] font-extrabold">
+                          Required to place order
+                        </span>
+                      )}
+                    </label>
+                    <textarea
+                      ref={addressInputRef}
+                      rows={2}
+                      required
+                      value={customerAddress}
+                      onChange={(e) => {
+                        setCustomerAddress(e.target.value);
+                        handleSaveCustomerField('lifecare_customer_address', e.target.value);
+                        if (e.target.value.trim()) {
+                          setAddressPromptError(null);
+                        }
+                      }}
+                      placeholder="Enter House No., Street, Landmark, Baripada..."
+                      className={`w-full px-3 py-2 text-xs border rounded-xl bg-white text-[#122B22] focus:outline-none ${
+                        addressPromptError
+                          ? 'border-[#D97706] ring-2 ring-amber-300'
+                          : 'border-[#EAE4D3] focus:border-[#059669]'
+                      }`}
+                    />
+                  </div>
                 </div>
 
                 <button
                   type="button"
                   onClick={handleSendWhatsApp}
-                  className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 cursor-pointer"
+                  className="w-full py-3 px-4 bg-gradient-to-r from-[#059669] to-[#10B981] hover:brightness-105 active:scale-98 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-emerald-900/20 cursor-pointer"
                 >
                   <MessageCircle className="w-4 h-4" />
                   <span>Order via WhatsApp</span>

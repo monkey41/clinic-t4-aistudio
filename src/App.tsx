@@ -18,9 +18,11 @@ import { BottomNav } from './components/BottomNav';
 import { AdminPortal } from './components/AdminPortal';
 import { DoctorDirectory } from './components/DoctorDirectory';
 import { PinchAssistant } from './components/PinchAssistant';
+import { FloatingInstallPrompt } from './components/FloatingInstallPrompt';
 import {
   FestiveOverlay,
   RunningBanner,
+  TopAdShowcase,
   FooterShowcase,
 } from './components/FestiveLibrary';
 import {
@@ -42,13 +44,14 @@ import {
 } from './data/clinicData';
 import {
   Stethoscope,
-  FlaskConical,
   Sparkles,
   ExternalLink,
-  Pill,
   BellRing,
   X,
   ShieldCheck,
+  Flame,
+  Zap,
+  ChevronRight,
 } from 'lucide-react';
 import {
   fetchProductsFromFirestore,
@@ -89,18 +92,77 @@ const resolveCurrentTab = (): 'home' | 'doctors' | 'store' | 'appointments' | 'o
   return 'home';
 };
 
+const STORE_CATEGORY_CARDS: {
+  id: string;
+  label: string;
+  sublabel: string;
+  icon: string;
+  bg: string;
+  target: 'store' | 'pathology';
+}[] = [
+  {
+    id: 'skincare',
+    label: 'Skin Care',
+    sublabel: 'Creams & SPF',
+    icon: '✨',
+    bg: 'bg-[#FFFDF7] border-[#FDE68A]',
+    target: 'store',
+  },
+  {
+    id: 'babycare',
+    label: 'Baby Products',
+    sublabel: 'Gentle Care',
+    icon: '👶',
+    bg: 'bg-[#ECFDF5] border-[#A7F3D0]',
+    target: 'store',
+  },
+  {
+    id: 'medicines',
+    label: 'Medicines',
+    sublabel: 'Rx & First Aid',
+    icon: '💊',
+    bg: 'bg-white border-[#EAE4D3]',
+    target: 'store',
+  },
+  {
+    id: 'physio',
+    label: 'Physio Care',
+    sublabel: 'Braces & Belts',
+    icon: '🦵',
+    bg: 'bg-[#ECFDF5] border-[#A7F3D0]',
+    target: 'store',
+  },
+  {
+    id: 'wellness',
+    label: 'Wellness',
+    sublabel: 'Vitamins & Steam',
+    icon: '🍊',
+    bg: 'bg-[#FEF3C7]/60 border-[#FDE68A]',
+    target: 'store',
+  },
+  {
+    id: 'pathology',
+    label: 'Lab Tests',
+    sublabel: 'Blood Checkups',
+    icon: '🧪',
+    bg: 'bg-white border-[#EAE4D3]',
+    target: 'pathology',
+  },
+];
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<
     'home' | 'doctors' | 'store' | 'appointments' | 'offers' | 'admin'
   >(() => resolveCurrentTab());
 
-  // Preview customer app directly from Admin Portal without destroying admin session
   const [isAdminPreview, setIsAdminPreview] = useState(false);
   const [previewTab, setPreviewTab] = useState<
     'home' | 'doctors' | 'store' | 'appointments' | 'offers'
   >('home');
 
   const [appointmentsSubTab, setAppointmentsSubTab] = useState<'calendar' | 'pathology'>('calendar');
+  const [storeCategory, setStoreCategory] = useState<string>('all');
+  const [mapModalOpen, setMapModalOpen] = useState(false);
 
   // Dynamic reactive data
   const [doctors, setDoctors] = useState<Doctor[]>(() => getDoctors());
@@ -113,7 +175,6 @@ export default function App() {
   const [promotions, setPromotions] = useState<ClinicPromotionsConfig>(() => getPromotionsConfig());
   const [clinicConfig, setClinicConfig] = useState<ClinicConfig>(() => getClinicConfig());
   const [liveAlertToast, setLiveAlertToast] = useState<ClinicNotification | null>(null);
-  const [isPinchOpen, setIsPinchOpen] = useState(false);
 
   const knownNotifIdsRef = useRef<Set<string>>(
     new Set((() => {
@@ -140,12 +201,10 @@ export default function App() {
     }
   };
 
-  // Seed initial notification IDs on first mount so stale defaults don't pop on reload
   useEffect(() => {
     markNotifSeen(getClinicNotifications().map((n) => n.id));
   }, []);
 
-  // Listen to live clinic data modifications (same device)
   useEffect(() => {
     const syncData = () => {
       setDoctors(getDoctors());
@@ -229,7 +288,6 @@ export default function App() {
     ]);
   }, []);
 
-  // Real-time Firestore sync across all customer phones
   useEffect(() => {
     refreshCloudData();
 
@@ -303,7 +361,6 @@ export default function App() {
     };
   }, [refreshCloudData]);
 
-  // Handle URL history and browser back/forward/refresh buttons
   useEffect(() => {
     const handleLocationChange = () => {
       const current = resolveCurrentTab();
@@ -321,7 +378,6 @@ export default function App() {
     };
   }, []);
 
-  // Unified Tab Change Handler
   const handleTabChange = (
     tab: 'home' | 'doctors' | 'store' | 'appointments' | 'offers' | 'admin'
   ) => {
@@ -359,21 +415,25 @@ export default function App() {
     }
   };
 
+  const openStoreWithCategory = (category: string) => {
+    setStoreCategory(category);
+    handleTabChange('store');
+  };
+
   const t = TRANSLATIONS.en;
   const doctorBookingUrl = clinicConfig.doctorBookingUrl;
-  const pathologyBookingUrl = clinicConfig.pathologyBookingUrl;
 
-  // Which customer screen to render (normal tab OR admin preview tab)
   const displayedCustomerTab = isAdminPreview ? previewTab : activeTab;
+  const isCustomerView = activeTab !== 'admin' || isAdminPreview;
 
   return (
-    <div className="relative min-h-screen aura-page-bg text-[#1E2252]">
-      <div className="max-w-xl mx-auto min-h-screen shadow-xl flex flex-col justify-between relative aura-shell border-x border-white/75">
-        {/* Sticky Admin Preview Floating Return Bar */}
+    <div className="relative min-h-screen aura-page-bg text-[#122B22]">
+      <div className="max-w-xl mx-auto min-h-screen shadow-xl flex flex-col justify-between relative aura-shell border-x border-[#EAE4D3]">
+        {/* Sticky Admin Preview Return Bar */}
         {activeTab === 'admin' && isAdminPreview && (
-          <div className="sticky top-0 z-50 bg-gradient-to-r from-[#8B5CF6] via-[#7C3AED] to-[#6366F1] text-white px-4 py-2.5 flex items-center justify-between gap-2 shadow-md">
+          <div className="sticky top-0 z-50 bg-gradient-to-r from-[#065F46] via-[#059669] to-[#D97706] text-white px-4 py-2.5 flex items-center justify-between gap-2 shadow-md">
             <div className="flex items-center gap-2 text-xs font-extrabold">
-              <ShieldCheck className="w-4 h-4 text-purple-200 shrink-0" />
+              <ShieldCheck className="w-4 h-4 text-amber-200 shrink-0" />
               <span>Admin Preview Mode</span>
             </div>
             <button
@@ -382,7 +442,7 @@ export default function App() {
                 setIsAdminPreview(false);
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
-              className="px-3 py-1.5 rounded-xl bg-white text-[#5B3DF5] hover:bg-purple-50 text-xs font-black shadow-xs cursor-pointer flex items-center gap-1 transition-all active:scale-95"
+              className="px-3 py-1.5 rounded-xl bg-white text-[#065F46] hover:bg-[#ECFDF5] text-xs font-black shadow-xs cursor-pointer flex items-center gap-1 transition-all active:scale-95"
             >
               <span>← Back to Admin Portal</span>
             </button>
@@ -391,17 +451,17 @@ export default function App() {
 
         {/* Live Foreground Notification Toast */}
         {liveAlertToast && (
-          <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-md bg-gradient-to-r from-[#6D4AFF] to-[#8B5CF6] text-white p-3.5 rounded-2xl shadow-2xl border border-white/40 flex items-start justify-between gap-2 animate-in fade-in slide-in-from-top-3">
+          <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-md bg-gradient-to-r from-[#065F46] to-[#059669] text-white p-3.5 rounded-2xl shadow-2xl border border-[#A7F3D0] flex items-start justify-between gap-2 animate-in fade-in slide-in-from-top-3">
             <div className="flex items-start gap-2.5 min-w-0">
               <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center shrink-0 mt-0.5">
-                <BellRing className="w-4 h-4 text-amber-200" />
+                <BellRing className="w-4 h-4 text-[#FDE68A]" />
               </div>
               <div className="min-w-0">
                 <span className="text-[9px] font-black uppercase tracking-wider bg-white/20 px-1.5 py-0.5 rounded">
                   {liveAlertToast.badge || 'New Update'}
                 </span>
                 <p className="text-xs font-black mt-1 leading-snug">{liveAlertToast.title}</p>
-                <p className="text-[11px] text-purple-100 line-clamp-2 mt-0.5">
+                <p className="text-[11px] text-emerald-100 line-clamp-2 mt-0.5">
                   {liveAlertToast.message}
                 </p>
               </div>
@@ -416,33 +476,32 @@ export default function App() {
           </div>
         )}
 
-        {/* Sticky Header (shown in Customer view & Admin Preview) */}
-        {(activeTab !== 'admin' || isAdminPreview) && (
+        {/* Sticky Header */}
+        {isCustomerView && (
           <Header
             brandName={clinicConfig.name || t.brand || 'Life Care'}
             onTabChange={handleTabChange}
             activeTab={displayedCustomerTab}
             notifications={notifications}
             onRefreshCloudData={refreshCloudData}
+            onOpenMap={() => setMapModalOpen(true)}
           />
         )}
 
-        {/* Optional Admin Running Banner (Renders only when enabled + non-empty) */}
-        {(activeTab !== 'admin' || isAdminPreview) && (
+        {/* Optional Admin Running Banner */}
+        {isCustomerView && (
           <RunningBanner
             config={promotions.runningBanner}
             onNavigate={(tab) => handleTabChange(tab)}
           />
         )}
 
-        {/* Optional Lightweight App-Wide Festive Accent Overlay */}
-        {(activeTab !== 'admin' || isAdminPreview) && (
-          <FestiveOverlay config={promotions.festiveDecoration} />
-        )}
+        {/* Optional Lightweight Festive Accent Overlay */}
+        {isCustomerView && <FestiveOverlay config={promotions.festiveDecoration} />}
 
         {/* Main Content Area */}
         <main className="flex-1">
-          {/* 1. ADMIN PORTAL TAB (Kept mounted & hidden during Preview to preserve session) */}
+          {/* 1. ADMIN PORTAL TAB */}
           {activeTab === 'admin' && (
             <div className={isAdminPreview ? 'hidden' : ''}>
               <AdminPortal
@@ -456,12 +515,13 @@ export default function App() {
             </div>
           )}
 
-          {/* 2. HOME TAB (Pastel Aura 2x2 Quick Services, Smooth Doctor Swipe & Map) */}
-          {(activeTab !== 'admin' || isAdminPreview) && displayedCustomerTab === 'home' && (
-            <div className="space-y-4 pt-3 pb-4">
-              {/* 4 Distinct Pastel Aura Service Cards matching Reference Design */}
-              <section className="px-4">
-                <div className="grid grid-cols-2 gap-2.5">
+          {/* 2. HOME TAB */}
+          {isCustomerView && displayedCustomerTab === 'home' && (
+            <div className="space-y-4 pt-3.5 pb-4">
+              {/* Top 4 Bigger Highlight Boxes (Book OPD, Offers, Popular, Quick Order) + Admin Ad/Festive Showcase */}
+              <section className="px-4 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Box 1: Book OPD */}
                   <a
                     href={doctorBookingUrl}
                     target="_blank"
@@ -474,22 +534,45 @@ export default function App() {
                         url: doctorBookingUrl,
                       })
                     }
-                    className="p-3.5 rounded-2xl bg-gradient-to-br from-[#C44EFB] via-[#9358F7] to-[#6366F1] text-white shadow-md shadow-indigo-500/20 flex items-center gap-2.5 transition-transform active:scale-98 cursor-pointer"
+                    className="min-h-[108px] p-4 rounded-3xl bg-gradient-to-br from-[#065F46] via-[#059669] to-[#10B981] text-white shadow-md shadow-emerald-950/15 border border-[#6EE7B7]/30 flex flex-col justify-between transition-transform active:scale-98 cursor-pointer"
                   >
-                    <div className="w-10 h-10 rounded-xl bg-white/25 flex items-center justify-center shrink-0">
-                      <Stethoscope className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1">
-                        <span className="font-black text-xs leading-tight">Book OPD</span>
-                        <ExternalLink className="w-3 h-3 opacity-85 shrink-0" />
+                    <div className="flex items-center justify-between">
+                      <div className="w-11 h-11 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
+                        <Stethoscope className="w-5 h-5 text-[#FEF3C7]" />
                       </div>
-                      <p className="text-[10px] text-purple-100 truncate mt-0.5">
+                      <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+                    </div>
+                    <div className="mt-2.5">
+                      <span className="font-black text-sm leading-tight block">Book OPD</span>
+                      <p className="text-[11px] text-emerald-100 mt-0.5 truncate">
                         {doctors.length} Specialists
                       </p>
                     </div>
                   </a>
 
+                  {/* Box 2: Offers */}
+                  <button
+                    type="button"
+                    onClick={() => handleTabChange('offers')}
+                    className="min-h-[108px] p-4 rounded-3xl bg-gradient-to-br from-[#FEF3C7] via-[#FFFBEB] to-[#FFFFFF] border border-[#FDE68A] text-[#122B22] shadow-sm flex flex-col justify-between text-left transition-transform active:scale-98 cursor-pointer"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="w-11 h-11 rounded-2xl bg-white border border-[#FDE68A] text-[#D97706] flex items-center justify-center shrink-0 shadow-2xs">
+                        <Sparkles className="w-5 h-5" />
+                      </div>
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-[#D97706] text-white">
+                        Deals
+                      </span>
+                    </div>
+                    <div className="mt-2.5">
+                      <span className="font-black text-sm leading-tight block">Offers</span>
+                      <p className="text-[11px] text-[#92400E] font-semibold mt-0.5 truncate">
+                        {specialOffers.length} Active Packages
+                      </p>
+                    </div>
+                  </button>
+
+                  {/* Box 3: Popular */}
                   <button
                     type="button"
                     onClick={() => {
@@ -501,92 +584,154 @@ export default function App() {
                       }
                       window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
-                    className="p-3.5 rounded-2xl bg-[#FDECE8]/95 border border-white text-[#1E2252] shadow-sm flex items-center gap-2.5 text-left transition-transform active:scale-98 cursor-pointer"
+                    className="min-h-[108px] p-4 rounded-3xl bg-gradient-to-br from-[#ECFDF5] via-[#FFFFFF] to-[#FCFBF7] border border-[#A7F3D0] text-[#122B22] shadow-sm flex flex-col justify-between text-left transition-transform active:scale-98 cursor-pointer"
                   >
-                    <div className="w-10 h-10 rounded-xl bg-white text-[#EC4899] flex items-center justify-center shrink-0 shadow-2xs">
-                      <FlaskConical className="w-5 h-5" />
+                    <div className="flex items-center justify-between">
+                      <div className="w-11 h-11 rounded-2xl bg-white border border-[#A7F3D0] text-[#059669] flex items-center justify-center shrink-0 shadow-2xs">
+                        <Flame className="w-5 h-5" />
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-[#059669]" />
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <span className="font-black text-xs leading-tight block">Lab Tests</span>
-                      <p className="text-[10px] text-slate-500 truncate mt-0.5">
-                        Pathology & Rates
+                    <div className="mt-2.5">
+                      <span className="font-black text-sm leading-tight block">Popular</span>
+                      <p className="text-[11px] text-[#4B6358] font-semibold mt-0.5 truncate">
+                        Lab Tests & Packages
                       </p>
                     </div>
                   </button>
 
+                  {/* Box 4: Quick Order */}
                   <button
                     type="button"
-                    onClick={() => handleTabChange('store')}
-                    className="p-3.5 rounded-2xl bg-[#E4F0FC]/95 border border-white text-[#1E2252] shadow-sm flex items-center gap-2.5 text-left transition-transform active:scale-98 cursor-pointer"
+                    onClick={() => openStoreWithCategory('all')}
+                    className="min-h-[108px] p-4 rounded-3xl bg-white border border-[#EAE4D3] text-[#122B22] shadow-sm flex flex-col justify-between text-left transition-transform active:scale-98 cursor-pointer"
                   >
-                    <div className="w-10 h-10 rounded-xl bg-white text-[#3B82F6] flex items-center justify-center shrink-0 shadow-2xs">
-                      <Pill className="w-5 h-5" />
+                    <div className="flex items-center justify-between">
+                      <div className="w-11 h-11 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0] text-[#059669] flex items-center justify-center shrink-0 shadow-2xs">
+                        <Zap className="w-5 h-5 text-[#D97706]" />
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-[#7C8F86]" />
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <span className="font-black text-xs leading-tight block">Pharmacy</span>
-                      <p className="text-[10px] text-slate-500 truncate mt-0.5">
-                        Meds & Physio
-                      </p>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleTabChange('offers')}
-                    className="p-3.5 rounded-2xl bg-[#EDE7FE]/95 border border-white text-[#1E2252] shadow-sm flex items-center gap-2.5 text-left transition-transform active:scale-98 cursor-pointer"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-white text-[#7C3AED] flex items-center justify-center shrink-0 shadow-2xs">
-                      <Sparkles className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <span className="font-black text-xs leading-tight block">Offers</span>
-                      <p className="text-[10px] text-slate-500 font-semibold truncate mt-0.5">
-                        {specialOffers.length} Active Packages
+                    <div className="mt-2.5">
+                      <span className="font-black text-sm leading-tight block">Quick Order</span>
+                      <p className="text-[11px] text-[#4B6358] font-semibold mt-0.5 truncate">
+                        Medicines & Store
                       </p>
                     </div>
                   </button>
                 </div>
+
+                {/* Optional Admin-Uploaded Top Ad / Festive Pictures & GIFs */}
+                <TopAdShowcase
+                  config={promotions.topShowcase}
+                  onNavigate={(tab) => handleTabChange(tab)}
+                />
               </section>
 
-              {/* Smooth Doctor Swipe Carousel (Auto-swipe pauses cleanly when PINCH is open) */}
+              {/* Smooth Doctor Carousel (Name, Field & Book OPD Only) */}
               <DoctorSwipe
                 doctors={doctors}
                 t={t}
                 onViewAll={() => handleTabChange('doctors')}
-                pauseAutoSwipe={isPinchOpen}
               />
 
-              {/* Clinic Location & Map */}
+              {/* Swipeable Category Boxes Under Doctor Carousel */}
+              <section className="px-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <h2 className="font-black text-sm tracking-tight text-[#122B22]">
+                    Shop by Category
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => openStoreWithCategory('all')}
+                    className="text-xs font-extrabold text-[#059669] hover:text-[#065F46] flex items-center gap-0.5 cursor-pointer"
+                  >
+                    <span>Browse Store</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <div className="flex items-stretch gap-2.5 overflow-x-auto no-scrollbar snap-x snap-mandatory pb-1">
+                  {STORE_CATEGORY_CARDS.map((cat) => (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => {
+                        if (cat.target === 'pathology') {
+                          setAppointmentsSubTab('pathology');
+                          handleTabChange('appointments');
+                        } else {
+                          openStoreWithCategory(cat.id);
+                        }
+                      }}
+                      className={`min-w-[116px] shrink-0 snap-start rounded-2xl p-3 border shadow-2xs hover:shadow-sm transition-all active:scale-96 text-left flex flex-col justify-between gap-2 cursor-pointer ${cat.bg}`}
+                    >
+                      <span className="w-9 h-9 rounded-xl bg-white border border-[#EAE4D3] flex items-center justify-center text-lg shadow-2xs">
+                        {cat.icon}
+                      </span>
+                      <div>
+                        <span className="font-black text-xs text-[#122B22] block leading-tight">
+                          {cat.label}
+                        </span>
+                        <span className="text-[10px] font-semibold text-[#4B6358] block mt-0.5">
+                          {cat.sublabel}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              {/* Single-Button Clinic Location Map (Opens Interactive Modal) */}
               <section className="pt-1">
-                <ClinicMap t={t} />
+                <ClinicMap
+                  t={t}
+                  externalOpen={mapModalOpen}
+                  onExternalClose={() => setMapModalOpen(false)}
+                />
               </section>
             </div>
           )}
 
+          {/* Keep single ClinicMap modal mountable when triggered from Header Menu on non-Home tabs */}
+          {isCustomerView && displayedCustomerTab !== 'home' && mapModalOpen && (
+            <div className="hidden">
+              <ClinicMap
+                t={t}
+                externalOpen={mapModalOpen}
+                onExternalClose={() => setMapModalOpen(false)}
+              />
+            </div>
+          )}
+
           {/* 3. DOCTORS DIRECTORY TAB */}
-          {(activeTab !== 'admin' || isAdminPreview) && displayedCustomerTab === 'doctors' && (
+          {isCustomerView && displayedCustomerTab === 'doctors' && (
             <DoctorDirectory doctors={doctors} t={t} doctorBookingUrl={doctorBookingUrl} />
           )}
 
           {/* 4. PHARMACY & PHYSIO STORE TAB */}
-          {(activeTab !== 'admin' || isAdminPreview) && displayedCustomerTab === 'store' && (
+          {isCustomerView && displayedCustomerTab === 'store' && (
             <div className="pb-6">
-              <PharmacySection products={products} t={t} />
+              <PharmacySection
+                products={products}
+                t={t}
+                defaultCategory={storeCategory}
+              />
             </div>
           )}
 
           {/* 5. BOOKINGS TAB */}
-          {(activeTab !== 'admin' || isAdminPreview) && displayedCustomerTab === 'appointments' && (
+          {isCustomerView && displayedCustomerTab === 'appointments' && (
             <AppointmentsList t={t} initialSubTab={appointmentsSubTab} />
           )}
 
           {/* 6. SPECIAL OFFERS TAB */}
-          {(activeTab !== 'admin' || isAdminPreview) && displayedCustomerTab === 'offers' && (
+          {isCustomerView && displayedCustomerTab === 'offers' && (
             <SpecialOfferPage offers={specialOffers} onBack={() => handleTabChange('home')} />
           )}
 
-          {/* Optional Admin Footer Media / Festive / Offer Card (Zero blank space if none active) */}
-          {(activeTab !== 'admin' || isAdminPreview) && (
+          {/* Optional Admin Footer Media / Festive / Offer Card */}
+          {isCustomerView && (
             <FooterShowcase
               config={promotions.footerShowcase}
               festiveConfig={promotions.festiveDecoration}
@@ -594,18 +739,24 @@ export default function App() {
               onNavigate={(tab) => handleTabChange(tab)}
             />
           )}
-          {(activeTab !== 'admin' || isAdminPreview) && !promotions.footerShowcase.enabled && (
-            <div className="h-20" aria-hidden="true" />
+          {isCustomerView && !promotions.footerShowcase.enabled && (
+            <div className="h-24" aria-hidden="true" />
           )}
         </main>
 
-        {/* Floating PINCH Updates Assistant (Customer App & Admin Preview) */}
-        {(activeTab !== 'admin' || isAdminPreview) && (
-          <PinchAssistant updates={pinchUpdates} onOpenChange={setIsPinchOpen} />
+        {/* Floating App Download Prompt for Website Visitors */}
+        {isCustomerView && <FloatingInstallPrompt />}
+
+        {/* Floating Alive PINCH Assistant (Right Side, Higher Up) */}
+        {isCustomerView && (
+          <PinchAssistant
+            updates={pinchUpdates}
+            elevateOnStore={displayedCustomerTab === 'store'}
+          />
         )}
 
-        {/* Bottom Navigation Bar */}
-        {(activeTab !== 'admin' || isAdminPreview) && (
+        {/* Sticky Bottom Navigation Bar (Bookings replaces WhatsApp) */}
+        {isCustomerView && (
           <BottomNav activeTab={displayedCustomerTab} onTabChange={handleTabChange} t={t} />
         )}
       </div>

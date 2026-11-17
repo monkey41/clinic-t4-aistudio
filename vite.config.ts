@@ -25,8 +25,8 @@ export default defineConfig(() => {
           short_name: 'Life Care',
           description:
             'Community pharmacy and poly clinic portal with specialist doctor OPD consultations, pathology blood test bookings, and physiotherapy supplies.',
-          theme_color: '#0d9488',
-          background_color: '#ffffff',
+          theme_color: '#059669',
+          background_color: '#FCFBF7',
           display: 'standalone',
           start_url: '/',
           scope: '/',

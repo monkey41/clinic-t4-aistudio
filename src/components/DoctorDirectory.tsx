@@ -142,16 +142,16 @@ export const DoctorDirectory: React.FC<DoctorDirectoryProps> = ({
               key={opt}
               type="button"
               onClick={() => setSelectedSpecialty(opt)}
-              className={`px-3 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
+                className={`px-3 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
                 isSelected
-                  ? 'bg-teal-700 text-white shadow-xs'
-                  : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                  ? 'bg-[#059669] text-white shadow-xs'
+                  : 'bg-white text-[#122B22] border border-[#EAE4D3] hover:bg-[#ECFDF5]'
               }`}
             >
               <span>{opt === 'ALL' ? 'All Specialties' : opt}</span>
               <span
                 className={`text-[10px] px-1 rounded-full ${
-                  isSelected ? 'bg-teal-800 text-teal-100' : 'bg-slate-100 text-slate-500'
+                  isSelected ? 'bg-[#065F46] text-emerald-100' : 'bg-[#F7F4EC] text-[#4B6358]'
                 }`}
               >
                 {count}
@@ -197,41 +197,40 @@ export const DoctorDirectory: React.FC<DoctorDirectoryProps> = ({
                   <img
                     src={doctor.photo}
                     alt={doctor.name}
-                    className="w-14 h-14 rounded-2xl object-cover object-top border border-teal-200/60 bg-teal-50"
+                    className="w-14 h-14 rounded-2xl object-cover object-top border border-[#A7F3D0] bg-[#ECFDF5]"
                     loading="lazy"
                     referrerPolicy="no-referrer"
                   />
-                  <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full" />
                 </div>
 
                 {/* Doctor Core Info */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-1">
-                    <h3 className="font-black text-xs sm:text-sm text-slate-900 leading-snug">
+                    <h3 className="font-black text-xs sm:text-sm text-[#122B22] leading-snug">
                       {doctor.name}
                     </h3>
-                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-teal-50 border border-teal-200 text-teal-800 shrink-0">
+                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-[#ECFDF5] border border-[#A7F3D0] text-[#065F46] shrink-0">
                       {doctor.department}
                     </span>
                   </div>
 
                   {/* Specialty - No truncation */}
-                  <p className="text-[11px] font-bold text-teal-700 leading-tight mt-0.5">
+                  <p className="text-[11px] font-bold text-[#059669] leading-tight mt-0.5">
                     {doctor.specialty}
                   </p>
 
                   {/* Qualifications */}
-                  <p className="text-[10px] text-slate-500 font-medium mt-0.5 flex items-center gap-1">
-                    <Award className="w-3 h-3 text-amber-600 shrink-0" />
+                  <p className="text-[10px] text-[#4B6358] font-medium mt-0.5 flex items-center gap-1">
+                    <Award className="w-3 h-3 text-[#D97706] shrink-0" />
                     <span>{doctor.qualification} • {doctor.experience}</span>
                   </p>
                 </div>
               </div>
 
               {/* Bottom bar of card: Timing & Varied Actions */}
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
-                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 min-w-0">
-                  <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <div className="pt-2 border-t border-[#EAE4D3] flex items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[#122B22] min-w-0">
+                  <Clock className="w-3.5 h-3.5 text-[#059669] shrink-0" />
                   <span className="truncate">{doctor.timing}</span>
                 </div>
 
@@ -242,7 +241,7 @@ export const DoctorDirectory: React.FC<DoctorDirectoryProps> = ({
                       e.stopPropagation();
                       setActiveDoctorModal(doctor);
                     }}
-                    className="text-[11px] font-bold text-slate-600 hover:text-teal-800 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors"
+                    className="text-[11px] font-bold text-[#4B6358] hover:text-[#059669] px-2 py-1 rounded-lg hover:bg-[#ECFDF5] transition-colors"
                   >
                     Profile &rarr;
                   </button>
@@ -250,7 +249,7 @@ export const DoctorDirectory: React.FC<DoctorDirectoryProps> = ({
                   <button
                     type="button"
                     onClick={(e) => handleOpenBooking(doctor, e)}
-                    className="text-[11px] font-extrabold text-white bg-teal-700 hover:bg-teal-800 px-3 py-1.5 rounded-xl shadow-2xs flex items-center gap-1 transition-all active:scale-95"
+                    className="text-[11px] font-extrabold text-white bg-[#059669] hover:bg-[#047857] px-3 py-1.5 rounded-xl shadow-2xs flex items-center gap-1 transition-all active:scale-95"
                   >
                     <CalendarCheck className="w-3 h-3" />
                     <span>Book OPD</span>

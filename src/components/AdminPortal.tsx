@@ -103,6 +103,8 @@ import {
   Cloud,
   Image as ImageIcon,
   PartyPopper,
+  MapPin,
+  Phone,
 } from 'lucide-react';
 import {
   getFirebaseAuth,
@@ -149,6 +151,7 @@ import {
   getAssetsForFestival,
   FestiveArtwork,
   RunningBanner,
+  TopAdShowcase,
   FooterShowcase,
 } from './FestiveLibrary';
 
@@ -291,6 +294,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
   const [promoDraft, setPromoDraft] = useState<ClinicPromotionsConfig>(() =>
     getPromotionsConfig()
   );
+  const [promoGalleryFilter, setPromoGalleryFilter] = useState<'all' | FestiveThemeId>('all');
+  const [topMediaUrlInput, setTopMediaUrlInput] = useState<string>('');
   const [isPublishingPromo, setIsPublishingPromo] = useState<boolean>(false);
   const [promoMediaLoading, setPromoMediaLoading] = useState<boolean>(false);
 
@@ -633,13 +638,97 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
           mediaUrl: dataUrl,
         },
       }));
-      showToast('Picture / GIF loaded into Preview. Click Publish Live when ready.');
+      showToast('Picture / GIF loaded into Footer Preview. Click Publish Live when ready.');
     } catch (err: any) {
       showToast(err?.message || 'Could not load selected image/GIF.');
     } finally {
       setPromoMediaLoading(false);
       e.target.value = '';
     }
+  };
+
+  const handleTopShowcaseMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setPromoMediaLoading(true);
+    try {
+      const loadedUrls: string[] = [];
+      for (const file of files) {
+        const dataUrl = await compressDoctorImageFile(file, 560);
+        loadedUrls.push(dataUrl);
+      }
+      setPromoDraft((prev) => {
+        const currentTop = prev.topShowcase || {
+          enabled: true,
+          title: '',
+          subtitle: '',
+          mediaUrls: [],
+          ctaLabel: 'View Offer',
+          ctaTab: 'offers' as PromoLinkTab,
+        };
+        return {
+          ...prev,
+          topShowcase: {
+            ...currentTop,
+            enabled: true,
+            mediaUrls: [...(currentTop.mediaUrls || []), ...loadedUrls],
+          },
+        };
+      });
+      showToast(
+        `${loadedUrls.length} picture${loadedUrls.length > 1 ? 's' : ''} / GIF loaded into Top Preview!`
+      );
+    } catch (err: any) {
+      showToast(err?.message || 'Could not load selected image/GIF.');
+    } finally {
+      setPromoMediaLoading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleAddTopMediaUrl = () => {
+    const clean = topMediaUrlInput.trim();
+    if (!clean) return;
+    setPromoDraft((prev) => {
+      const currentTop = prev.topShowcase || {
+        enabled: true,
+        title: '',
+        subtitle: '',
+        mediaUrls: [],
+        ctaLabel: 'View Offer',
+        ctaTab: 'offers' as PromoLinkTab,
+      };
+      return {
+        ...prev,
+        topShowcase: {
+          ...currentTop,
+          enabled: true,
+          mediaUrls: [...(currentTop.mediaUrls || []), clean],
+        },
+      };
+    });
+    setTopMediaUrlInput('');
+    showToast('Media added to Top 4-Box Showcase Preview.');
+  };
+
+  const handleRemoveTopMediaAt = (idx: number) => {
+    setPromoDraft((prev) => {
+      const currentTop = prev.topShowcase || {
+        enabled: false,
+        title: '',
+        subtitle: '',
+        mediaUrls: [],
+        ctaLabel: 'View Offer',
+        ctaTab: 'offers' as PromoLinkTab,
+      };
+      return {
+        ...prev,
+        topShowcase: {
+          ...currentTop,
+          mediaUrls: (currentTop.mediaUrls || []).filter((_, i) => i !== idx),
+        },
+      };
+    });
   };
 
   // Explicit back to app with session destruction
@@ -2479,6 +2568,22 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                         <p className="text-[10px] text-slate-500 truncate mt-0.5">
                           {order.items.map((i) => `${i.name} ×${i.quantity}`).join(', ')}
                         </p>
+                        {(order.customerAddress || order.customerPhone) && (
+                          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 mt-1 text-[10px] text-slate-600">
+                            {order.customerAddress && (
+                              <span className="inline-flex items-center gap-1 truncate max-w-full">
+                                <MapPin className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+                                <span className="truncate">{order.customerAddress}</span>
+                              </span>
+                            )}
+                            {order.customerPhone && (
+                              <span className="inline-flex items-center gap-1 shrink-0">
+                                <Phone className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                                <span>{order.customerPhone}</span>
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-1.5 shrink-0">
@@ -2782,28 +2887,219 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
         )}
 
         {/* ================================================================ */}
-        {/* TAB: FESTIVE DECORATIONS, RUNNING BANNER & FOOTER MEDIA/ADS      */}
+        {/* TAB: FESTIVE DECORATIONS, TOP & FOOTER MEDIA/ADS, RUNNING BANNER */}
         {/* ================================================================ */}
-        {activeTab === 'promotions' && (
+        {activeTab === 'promotions' && (() => {
+          const topDraft = promoDraft.topShowcase || {
+            enabled: false,
+            title: '',
+            subtitle: '',
+            mediaUrls: [],
+            ctaLabel: 'View Offer',
+            ctaTab: 'offers' as PromoLinkTab,
+          };
+
+          const filteredAssets =
+            promoGalleryFilter === 'all'
+              ? FESTIVE_ASSETS
+              : getAssetsForFestival(promoGalleryFilter);
+
+          return (
           <div className="space-y-4 animate-in fade-in">
             <div className="flex items-center justify-between gap-2">
               <div>
-                <h3 className="font-black text-base text-[#1E2252] flex items-center gap-1.5">
-                  <PartyPopper className="w-4 h-4 text-[#6D4AFF]" />
-                  <span>Festive Decorations, Banner & Footer Ads</span>
+                <h3 className="font-black text-base text-[#122B22] flex items-center gap-1.5">
+                  <PartyPopper className="w-4 h-4 text-[#059669]" />
+                  <span>Festive Media, Top Showcase & Ads</span>
                 </h3>
-                <p className="text-xs text-slate-600">
-                  Configure festive themes, running marquee banner, and footer GIFs/offers with live preview before publishing.
+                <p className="text-xs text-[#4B6358]">
+                  Browse festive GIFs & illustrations, upload multiple pics/GIFs to Top 4 Boxes or Footer, and preview before publishing live.
                 </p>
               </div>
             </div>
 
-            {/* 1. RUNNING BANNER CONTROLS */}
-            <div className="bg-white/95 rounded-3xl border border-white p-4 space-y-3 shadow-xs">
+            {/* 1. TOP 4-BOX SHOWCASE (MULTIPLE PICS / GIFS & FESTIVE ADS) */}
+            <div className="bg-white rounded-3xl border border-[#EAE4D3] p-4 space-y-3 shadow-xs">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Megaphone className="w-4 h-4 text-[#6D4AFF]" />
-                  <h4 className="font-black text-sm text-[#1E2252]">1. Running Marquee Banner</h4>
+                  <ImageIcon className="w-4 h-4 text-[#059669]" />
+                  <div>
+                    <h4 className="font-black text-sm text-[#122B22]">
+                      1. Top Home Ad / Festive Pics & GIFs
+                    </h4>
+                    <p className="text-[10px] text-[#4B6358]">
+                      Appears directly below the top 4 action boxes on Customer Home (hidden cleanly when off).
+                    </p>
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={topDraft.enabled}
+                    onChange={(e) =>
+                      setPromoDraft((prev) => ({
+                        ...prev,
+                        topShowcase: { ...topDraft, enabled: e.target.checked },
+                      }))
+                    }
+                  />
+                  <span>{topDraft.enabled ? 'On' : 'Off'}</span>
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  placeholder="Headline (e.g. Monsoon Wellness Sale)"
+                  value={topDraft.title}
+                  onChange={(e) =>
+                    setPromoDraft((prev) => ({
+                      ...prev,
+                      topShowcase: { ...topDraft, title: e.target.value },
+                    }))
+                  }
+                  className="px-3 py-2 rounded-xl border border-[#EAE4D3] text-xs font-semibold focus:outline-[#059669]"
+                />
+                <input
+                  type="text"
+                  placeholder="Button Label (e.g. Shop Now)"
+                  value={topDraft.ctaLabel}
+                  onChange={(e) =>
+                    setPromoDraft((prev) => ({
+                      ...prev,
+                      topShowcase: { ...topDraft, ctaLabel: e.target.value },
+                    }))
+                  }
+                  className="px-3 py-2 rounded-xl border border-[#EAE4D3] text-xs font-semibold focus:outline-[#059669]"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  placeholder="Subtitle (optional short message)"
+                  value={topDraft.subtitle}
+                  onChange={(e) =>
+                    setPromoDraft((prev) => ({
+                      ...prev,
+                      topShowcase: { ...topDraft, subtitle: e.target.value },
+                    }))
+                  }
+                  className="px-3 py-2 rounded-xl border border-[#EAE4D3] text-xs font-semibold focus:outline-[#059669]"
+                />
+                <select
+                  value={topDraft.ctaTab}
+                  onChange={(e) =>
+                    setPromoDraft((prev) => ({
+                      ...prev,
+                      topShowcase: { ...topDraft, ctaTab: e.target.value as PromoLinkTab },
+                    }))
+                  }
+                  className="px-2.5 py-2 rounded-xl border border-[#EAE4D3] text-xs font-semibold bg-white"
+                >
+                  <option value="offers">Open Offers Page</option>
+                  <option value="store">Open Pharmacy Store</option>
+                  <option value="doctors">Open Doctors OPD</option>
+                  <option value="appointments">Open Bookings</option>
+                  <option value="none">No Button</option>
+                </select>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="px-3 py-2 rounded-xl bg-[#ECFDF5] hover:bg-[#D1FAE5] text-[#059669] border border-[#A7F3D0] text-xs font-extrabold cursor-pointer flex items-center gap-1.5">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{promoMediaLoading ? 'Loading...' : 'Upload Multiple Pics / GIFs'}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleTopShowcaseMediaUpload}
+                    className="hidden"
+                  />
+                </label>
+
+                <input
+                  type="text"
+                  placeholder="Or paste GIF / Image URL..."
+                  value={topMediaUrlInput}
+                  onChange={(e) => setTopMediaUrlInput(e.target.value)}
+                  className="flex-1 min-w-[160px] px-3 py-2 rounded-xl border border-[#EAE4D3] text-xs font-medium focus:outline-[#059669]"
+                />
+
+                <button
+                  type="button"
+                  onClick={handleAddTopMediaUrl}
+                  className="px-3 py-2 rounded-xl bg-[#059669] text-white text-xs font-bold cursor-pointer"
+                >
+                  + Add
+                </button>
+              </div>
+
+              {topDraft.mediaUrls.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-[#4B6358]">
+                      Queued Top Media ({topDraft.mediaUrls.length})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPromoDraft((prev) => ({
+                          ...prev,
+                          topShowcase: { ...topDraft, mediaUrls: [] },
+                        }))
+                      }
+                      className="text-[10px] font-bold text-rose-600 cursor-pointer"
+                    >
+                      Clear All
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                    {topDraft.mediaUrls.map((mUrl, idx) => {
+                      const presetItem = mUrl.startsWith('preset:')
+                        ? FESTIVE_ASSETS.find((a) => `preset:${a.id}` === mUrl)
+                        : undefined;
+                      return (
+                        <div
+                          key={`${mUrl.slice(0, 24)}-${idx}`}
+                          className="relative w-20 h-16 rounded-xl border border-[#EAE4D3] bg-[#FCFBF7] overflow-hidden shrink-0 flex items-center justify-center"
+                        >
+                          {presetItem ? (
+                            <FestiveArtwork
+                              assetId={presetItem.id}
+                              festival={presetItem.festival}
+                              size="sm"
+                            />
+                          ) : (
+                            <img
+                              src={mUrl}
+                              alt="Ad preview"
+                              className="w-full h-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveTopMediaAt(idx)}
+                            className="absolute top-1 right-1 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center shadow cursor-pointer"
+                            title="Remove media"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 2. RUNNING BANNER CONTROLS */}
+            <div className="bg-white rounded-3xl border border-[#EAE4D3] p-4 space-y-3 shadow-xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Megaphone className="w-4 h-4 text-[#059669]" />
+                  <h4 className="font-black text-sm text-[#122B22]">2. Running Marquee Banner</h4>
                 </div>
                 <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
                   <input
@@ -2830,12 +3126,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                     runningBanner: { ...prev.runningBanner, text: e.target.value },
                   }))
                 }
-                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-[#6D4AFF]"
+                className="w-full px-3 py-2.5 rounded-xl border border-[#EAE4D3] text-xs font-semibold focus:outline-[#059669]"
               />
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-600 mb-1">Banner Style</label>
+                  <label className="block text-[11px] font-bold text-[#4B6358] mb-1">Banner Style</label>
                   <select
                     value={promoDraft.runningBanner.bgPreset}
                     onChange={(e) =>
@@ -2847,18 +3143,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                         },
                       }))
                     }
-                    className="w-full px-2.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold bg-white"
+                    className="w-full px-2.5 py-2 rounded-xl border border-[#EAE4D3] text-xs font-semibold bg-white"
                   >
-                    <option value="violet">Violet Aura</option>
-                    <option value="festive">Festive Gradient</option>
-                    <option value="amber">Amber Orange</option>
-                    <option value="teal">Teal Emerald</option>
-                    <option value="rose">Rose Pink</option>
+                    <option value="teal">Emerald Mint</option>
+                    <option value="amber">Warm Gold</option>
+                    <option value="festive">Emerald & Gold Festive</option>
+                    <option value="violet">Royal Accent</option>
+                    <option value="rose">Coral Blossom</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-600 mb-1">Tap Opens</label>
+                  <label className="block text-[11px] font-bold text-[#4B6358] mb-1">Tap Opens</label>
                   <select
                     value={promoDraft.runningBanner.linkTab}
                     onChange={(e) =>
@@ -2870,7 +3166,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                         },
                       }))
                     }
-                    className="w-full px-2.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold bg-white"
+                    className="w-full px-2.5 py-2 rounded-xl border border-[#EAE4D3] text-xs font-semibold bg-white"
                   >
                     <option value="offers">Special Offers</option>
                     <option value="store">Pharmacy Store</option>
@@ -2882,12 +3178,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
               </div>
             </div>
 
-            {/* 2. FESTIVE DECORATION & LIGHTWEIGHT PRESETS */}
-            <div className="bg-white/95 rounded-3xl border border-white p-4 space-y-3 shadow-xs">
+            {/* 3. FESTIVE DECORATIONS & FULL GALLERY BROWSER */}
+            <div className="bg-white rounded-3xl border border-[#EAE4D3] p-4 space-y-3 shadow-xs">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-amber-500" />
-                  <h4 className="font-black text-sm text-[#1E2252]">2. Festive Decorations</h4>
+                  <Sparkles className="w-4 h-4 text-[#D97706]" />
+                  <h4 className="font-black text-sm text-[#122B22]">
+                    3. Browse Festive & Offer Pics / Animations
+                  </h4>
                 </div>
                 <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
                   <input
@@ -2909,8 +3207,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                    Choose Festival
+                  <label className="block text-[11px] font-bold text-[#4B6358] mb-1">
+                    Active Page Festival
                   </label>
                   <select
                     value={promoDraft.festiveDecoration.festival}
@@ -2927,7 +3225,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                         },
                       }));
                     }}
-                    className="w-full px-2.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold bg-white"
+                    className="w-full px-2.5 py-2 rounded-xl border border-[#EAE4D3] text-xs font-semibold bg-white"
                   >
                     {FESTIVALS_META.map((f) => (
                       <option key={f.id} value={f.id}>
@@ -2938,7 +3236,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                  <label className="block text-[11px] font-bold text-[#4B6358] mb-1">
                     Decoration Intensity
                   </label>
                   <select
@@ -2952,7 +3250,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                         },
                       }))
                     }
-                    className="w-full px-2.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold bg-white"
+                    className="w-full px-2.5 py-2 rounded-xl border border-[#EAE4D3] text-xs font-semibold bg-white"
                   >
                     <option value="subtle">Subtle (Clean)</option>
                     <option value="festive">Festive (Lively)</option>
@@ -2960,77 +3258,133 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                 </div>
               </div>
 
-              {/* Lightweight Animated Pics / Presets for Chosen Festival */}
-              {promoDraft.festiveDecoration.festival !== 'none' && (
-                <div className="space-y-1.5">
-                  <p className="text-[11px] font-bold text-slate-600">
-                    Lightweight Animated Pics for{' '}
-                    {FESTIVALS_META.find((f) => f.id === promoDraft.festiveDecoration.festival)?.label}:
-                  </p>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {getAssetsForFestival(promoDraft.festiveDecoration.festival).map((asset) => {
-                      const isPicked =
-                        promoDraft.festiveDecoration.presetAssetId === asset.id;
-                      return (
-                        <div
-                          key={asset.id}
-                          className={`p-2.5 rounded-2xl border text-center flex flex-col items-center gap-1.5 transition-all ${
-                            isPicked
-                              ? 'border-[#6D4AFF] bg-[#F2ECFF] ring-2 ring-[#6D4AFF]/30'
-                              : 'border-slate-200 bg-white hover:bg-slate-50'
-                          }`}
+              {/* Filter Tabs to Browse All 25 Animated Visuals */}
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setPromoGalleryFilter('all')}
+                  className={`px-3 py-1.5 rounded-full text-[11px] font-extrabold shrink-0 cursor-pointer border ${
+                    promoGalleryFilter === 'all'
+                      ? 'bg-[#059669] text-white border-[#059669]'
+                      : 'bg-[#FCFBF7] text-[#4B6358] border-[#EAE4D3]'
+                  }`}
+                >
+                  All ({FESTIVE_ASSETS.length})
+                </button>
+                {FESTIVALS_META.filter((f) => f.id !== 'none').map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setPromoGalleryFilter(f.id)}
+                    className={`px-3 py-1.5 rounded-full text-[11px] font-extrabold shrink-0 cursor-pointer border ${
+                      promoGalleryFilter === f.id
+                        ? 'bg-[#059669] text-white border-[#059669]'
+                        : 'bg-[#FCFBF7] text-[#4B6358] border-[#EAE4D3]'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-80 overflow-y-auto pr-1">
+                {filteredAssets.map((asset) => {
+                  const isPicked =
+                    promoDraft.festiveDecoration.enabled &&
+                    promoDraft.festiveDecoration.presetAssetId === asset.id;
+                  return (
+                    <div
+                      key={asset.id}
+                      className={`p-2.5 rounded-2xl border text-center flex flex-col items-center gap-1.5 transition-all ${
+                        isPicked
+                          ? 'border-[#059669] bg-[#ECFDF5] ring-2 ring-[#059669]/25'
+                          : 'border-[#EAE4D3] bg-[#FCFBF7] hover:bg-white'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPromoDraft((prev) => ({
+                            ...prev,
+                            festiveDecoration: {
+                              ...prev.festiveDecoration,
+                              enabled: true,
+                              festival: asset.festival,
+                              presetAssetId: asset.id,
+                            },
+                          }))
+                        }
+                        className="w-full flex flex-col items-center gap-1 cursor-pointer"
+                      >
+                        <FestiveArtwork assetId={asset.id} festival={asset.festival} size="sm" />
+                        <span className="text-[10px] font-extrabold text-[#122B22] leading-tight">
+                          {asset.label}
+                        </span>
+                        <span className="text-[9px] font-bold text-[#D97706]">
+                          {asset.badgeText}
+                        </span>
+                      </button>
+
+                      <div className="flex flex-wrap items-center justify-center gap-1 pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPromoDraft((prev) => {
+                              const currentTop = prev.topShowcase || {
+                                enabled: true,
+                                title: '',
+                                subtitle: '',
+                                mediaUrls: [],
+                                ctaLabel: 'View Offer',
+                                ctaTab: 'offers' as PromoLinkTab,
+                              };
+                              return {
+                                ...prev,
+                                topShowcase: {
+                                  ...currentTop,
+                                  enabled: true,
+                                  title: currentTop.title || asset.badgeText,
+                                  mediaUrls: [...(currentTop.mediaUrls || []), `preset:${asset.id}`],
+                                },
+                              };
+                            });
+                            showToast(`Added "${asset.label}" to Top 4-Box Showcase!`);
+                          }}
+                          className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-[#ECFDF5] border border-[#A7F3D0] text-[#059669] hover:bg-[#D1FAE5] cursor-pointer"
                         >
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setPromoDraft((prev) => ({
-                                ...prev,
-                                festiveDecoration: {
-                                  ...prev.festiveDecoration,
-                                  enabled: true,
-                                  presetAssetId: asset.id,
-                                },
-                              }))
-                            }
-                            className="w-full flex flex-col items-center gap-1.5 cursor-pointer"
-                          >
-                            <FestiveArtwork assetId={asset.id} festival={asset.festival} size="sm" />
-                            <span className="text-[10px] font-extrabold text-[#1E2252] leading-tight">
-                              {asset.label}
-                            </span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPromoDraft((prev) => ({
-                                ...prev,
-                                footerShowcase: {
-                                  ...prev.footerShowcase,
-                                  enabled: true,
-                                  mediaUrl: `preset:${asset.id}`,
-                                  title: prev.footerShowcase.title || asset.badgeText,
-                                },
-                              }));
-                              showToast(`Added "${asset.label}" to Footer Showcase.`);
-                            }}
-                            className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-white border border-slate-200 text-[#5B35F5] hover:bg-[#F2ECFF] cursor-pointer"
-                          >
-                            Use in Footer
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+                          + Top Ad
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPromoDraft((prev) => ({
+                              ...prev,
+                              footerShowcase: {
+                                ...prev.footerShowcase,
+                                enabled: true,
+                                mediaUrl: `preset:${asset.id}`,
+                                title: prev.footerShowcase.title || asset.badgeText,
+                              },
+                            }));
+                            showToast(`Applied "${asset.label}" to Footer Showcase!`);
+                          }}
+                          className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-[#FEF3C7] border border-[#FDE68A] text-[#92400E] hover:bg-[#FDE68A] cursor-pointer"
+                        >
+                          Footer
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
-            {/* 3. FOOTER FESTIVE / OFFER PICS & GIFS */}
-            <div className="bg-white/95 rounded-3xl border border-white p-4 space-y-3 shadow-xs">
+            {/* 4. FOOTER FESTIVE / OFFER PICS & GIFS */}
+            <div className="bg-white rounded-3xl border border-[#EAE4D3] p-4 space-y-3 shadow-xs">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <ImageIcon className="w-4 h-4 text-pink-600" />
-                  <h4 className="font-black text-sm text-[#1E2252]">3. Footer Pic / GIF & Offer Ad</h4>
+                  <ImageIcon className="w-4 h-4 text-[#D97706]" />
+                  <h4 className="font-black text-sm text-[#122B22]">4. Footer Pic / GIF & Offer Ad</h4>
                 </div>
                 <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
                   <input
@@ -3046,13 +3400,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                   <span>{promoDraft.footerShowcase.enabled ? 'On' : 'Off'}</span>
                 </label>
               </div>
-              <p className="text-[11px] text-slate-500">
-                When turned off or no active offer/festive media is set, nothing is shown at the bottom (no blank box).
+              <p className="text-[11px] text-[#4B6358]">
+                When turned off or no active offer/festive media is set, nothing is shown at the bottom (zero blank space).
               </p>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-600 mb-1">Footer Mode</label>
+                  <label className="block text-[11px] font-bold text-[#4B6358] mb-1">Footer Mode</label>
                   <select
                     value={promoDraft.footerShowcase.mode}
                     onChange={(e) =>
@@ -3064,7 +3418,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                         },
                       }))
                     }
-                    className="w-full px-2.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold bg-white"
+                    className="w-full px-2.5 py-2 rounded-xl border border-[#EAE4D3] text-xs font-semibold bg-white"
                   >
                     <option value="festive">Festive Greeting / GIF</option>
                     <option value="offer">Advertise Special Offer</option>
@@ -3073,7 +3427,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-600 mb-1">Button Opens</label>
+                  <label className="block text-[11px] font-bold text-[#4B6358] mb-1">Button Opens</label>
                   <select
                     value={promoDraft.footerShowcase.ctaTab}
                     onChange={(e) =>
@@ -3085,7 +3439,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                         },
                       }))
                     }
-                    className="w-full px-2.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold bg-white"
+                    className="w-full px-2.5 py-2 rounded-xl border border-[#EAE4D3] text-xs font-semibold bg-white"
                   >
                     <option value="offers">Offers Page</option>
                     <option value="store">Medicine Store</option>
@@ -3107,7 +3461,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                       footerShowcase: { ...prev.footerShowcase, title: e.target.value },
                     }))
                   }
-                  className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-[#6D4AFF]"
+                  className="px-3 py-2 rounded-xl border border-[#EAE4D3] text-xs font-semibold focus:outline-[#059669]"
                 />
                 <input
                   type="text"
@@ -3119,7 +3473,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                       footerShowcase: { ...prev.footerShowcase, ctaLabel: e.target.value },
                     }))
                   }
-                  className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-[#6D4AFF]"
+                  className="px-3 py-2 rounded-xl border border-[#EAE4D3] text-xs font-semibold focus:outline-[#059669]"
                 />
               </div>
 
@@ -3133,12 +3487,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                     footerShowcase: { ...prev.footerShowcase, subtitle: e.target.value },
                   }))
                 }
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-[#6D4AFF]"
+                className="w-full px-3 py-2 rounded-xl border border-[#EAE4D3] text-xs font-semibold focus:outline-[#059669]"
               />
 
               {/* Upload Picture / GIF OR Paste URL */}
               <div className="flex flex-wrap items-center gap-2">
-                <label className="px-3 py-2 rounded-xl bg-[#F2ECFF] hover:bg-[#E8DFFF] text-[#5B35F5] text-xs font-extrabold cursor-pointer flex items-center gap-1.5">
+                <label className="px-3 py-2 rounded-xl bg-[#ECFDF5] hover:bg-[#D1FAE5] text-[#059669] border border-[#A7F3D0] text-xs font-extrabold cursor-pointer flex items-center gap-1.5">
                   <Upload className="w-3.5 h-3.5" />
                   <span>{promoMediaLoading ? 'Loading...' : 'Upload Pic / GIF'}</span>
                   <input
@@ -3159,7 +3513,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                       footerShowcase: { ...prev.footerShowcase, mediaUrl: e.target.value },
                     }))
                   }
-                  className="flex-1 min-w-[180px] px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:outline-[#6D4AFF]"
+                  className="flex-1 min-w-[180px] px-3 py-2 rounded-xl border border-[#EAE4D3] text-xs font-medium focus:outline-[#059669]"
                 />
 
                 {promoDraft.footerShowcase.mediaUrl && (
@@ -3179,40 +3533,52 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
               </div>
             </div>
 
-            {/* 4. LIVE PREVIEW BEFORE UPLOADING / PUBLISHING */}
-            <div className="bg-white/95 rounded-3xl border-2 border-[#C6C5FF] p-4 space-y-3 shadow-sm">
+            {/* 5. LIVE PREVIEW BEFORE UPLOADING / PUBLISHING */}
+            <div className="bg-white rounded-3xl border-2 border-[#A7F3D0] p-4 space-y-3 shadow-sm">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-[#1E2252] flex items-center gap-1.5">
-                  <Eye className="w-4 h-4 text-[#6D4AFF]" />
+                <span className="text-xs font-black text-[#122B22] flex items-center gap-1.5">
+                  <Eye className="w-4 h-4 text-[#059669]" />
                   <span>Live Preview (Before Publishing)</span>
                 </span>
-                <span className="text-[10px] font-bold text-[#6D4AFF] bg-[#F2ECFF] px-2 py-0.5 rounded-full">
+                <span className="text-[10px] font-bold text-[#059669] bg-[#ECFDF5] px-2 py-0.5 rounded-full">
                   Draft
                 </span>
               </div>
 
-              <div className="rounded-2xl overflow-hidden border border-slate-200 aura-page-bg p-3 space-y-3">
+              <div className="rounded-2xl overflow-hidden border border-[#EAE4D3] aura-page-bg p-3 space-y-3">
                 {/* Preview Running Banner */}
                 {promoDraft.runningBanner.enabled && promoDraft.runningBanner.text.trim() ? (
                   <div className="rounded-xl overflow-hidden">
                     <RunningBanner config={promoDraft.runningBanner} />
                   </div>
                 ) : (
-                  <p className="text-[10px] text-slate-500 text-center italic">
+                  <p className="text-[10px] text-[#4B6358] text-center italic">
                     Running banner is currently off (nothing rendered).
+                  </p>
+                )}
+
+                {/* Preview Top Showcase */}
+                {topDraft.enabled &&
+                (topDraft.mediaUrls.filter(Boolean).length > 0 ||
+                  topDraft.title.trim() ||
+                  topDraft.subtitle.trim()) ? (
+                  <TopAdShowcase config={topDraft} />
+                ) : (
+                  <p className="text-[10px] text-[#4B6358] text-center italic">
+                    Top 4-box ad / festive showcase is currently off.
                   </p>
                 )}
 
                 {/* Preview Festive Decoration */}
                 {promoDraft.festiveDecoration.enabled &&
                   promoDraft.festiveDecoration.festival !== 'none' && (
-                    <div className="flex items-center justify-between px-3 py-2 rounded-2xl bg-white/80 border border-white">
+                    <div className="flex items-center justify-between px-3 py-2 rounded-2xl bg-white/90 border border-[#EAE4D3]">
                       <FestiveArtwork
                         assetId={promoDraft.festiveDecoration.presetAssetId}
                         festival={promoDraft.festiveDecoration.festival}
                         size="sm"
                       />
-                      <span className="text-xs font-black text-[#1E2252]">
+                      <span className="text-xs font-black text-[#122B22]">
                         {
                           FESTIVALS_META.find(
                             (f) => f.id === promoDraft.festiveDecoration.festival
@@ -3240,7 +3606,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                         promoDraft.festiveDecoration.festival !== 'none'));
                   if (!previewHasFooter) {
                     return (
-                      <p className="text-[10px] text-slate-500 text-center italic">
+                      <p className="text-[10px] text-[#4B6358] text-center italic">
                         Footer showcase is inactive or empty (zero blank box in app).
                       </p>
                     );
@@ -3262,7 +3628,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                   type="button"
                   onClick={() => handlePublishPromotions(DEFAULT_PROMOTIONS_CONFIG)}
                   disabled={isPublishingPromo}
-                  className="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold cursor-pointer"
+                  className="px-3.5 py-2.5 rounded-xl border border-[#EAE4D3] bg-[#FCFBF7] hover:bg-slate-100 text-[#4B6358] text-xs font-bold cursor-pointer"
                 >
                   Turn Off All
                 </button>
@@ -3270,7 +3636,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                   type="button"
                   onClick={() => handlePublishPromotions(promoDraft)}
                   disabled={isPublishingPromo}
-                  className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#A855F7] to-[#6366F1] hover:opacity-95 disabled:opacity-60 text-white text-xs font-black shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#059669] to-[#D97706] hover:opacity-95 disabled:opacity-60 text-white text-xs font-black shadow-md cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   {isPublishingPromo ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -3282,7 +3648,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
               </div>
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* ================================================================ */}
         {/* TAB 0B: PINCH UPDATES MANAGER (Verified Admins Only)             */}
@@ -5157,7 +5524,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                     onChange={(e) =>
                       setProductForm({
                         ...productForm,
-                        category: e.target.value as 'medicines' | 'physio' | 'wellness' | 'babycare',
+                        category: e.target.value as
+                          | 'medicines'
+                          | 'physio'
+                          | 'wellness'
+                          | 'babycare'
+                          | 'skincare',
                         isPhysio: e.target.value === 'physio',
                       })
                     }
@@ -5166,7 +5538,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                     <option value="medicines">Pharmacy Medicines</option>
                     <option value="physio">Physiotherapy & Rehab</option>
                     <option value="wellness">Wellness & Immunity</option>
-                    <option value="babycare">Baby Care</option>
+                    <option value="babycare">Baby Products</option>
+                    <option value="skincare">Skin Care</option>
                   </select>
                 </div>
                 <div>

@@ -122,14 +122,14 @@ export const AppointmentsList: React.FC<AppointmentsListProps> = ({
   return (
     <section className="py-3 px-4 max-w-xl mx-auto pb-24 space-y-3.5">
       {/* 1. Sub Tabs at the Very Top (Doctor Calendar vs Pathology Tests) */}
-      <div className="flex rounded-2xl p-1 shadow-inner border border-slate-200 bg-white">
+      <div className="flex rounded-2xl p-1 shadow-inner border border-[#EAE4D3] bg-white">
         <button
           type="button"
           onClick={() => setSubTab('calendar')}
           className={`flex-1 py-2 px-3 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
             subTab === 'calendar'
-              ? 'bg-teal-700 text-white shadow-xs'
-              : 'text-slate-600 hover:text-teal-700'
+              ? 'bg-[#059669] text-white shadow-xs'
+              : 'text-[#4B6358] hover:text-[#059669]'
           }`}
         >
           <CalendarIcon className="w-3.5 h-3.5" />
@@ -141,8 +141,8 @@ export const AppointmentsList: React.FC<AppointmentsListProps> = ({
           onClick={() => setSubTab('pathology')}
           className={`flex-1 py-2 px-3 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
             subTab === 'pathology'
-              ? 'bg-rose-600 text-white shadow-xs'
-              : 'text-slate-600 hover:text-rose-600'
+              ? 'bg-[#D97706] text-white shadow-xs'
+              : 'text-[#4B6358] hover:text-[#D97706]'
           }`}
         >
           <FlaskConical className="w-3.5 h-3.5" />
@@ -201,10 +201,10 @@ export const AppointmentsList: React.FC<AppointmentsListProps> = ({
                     onClick={() => setSelectedDate(item.date)}
                     className={`py-2 px-1 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer border ${
                       isSelected
-                        ? 'bg-gradient-to-b from-teal-700 to-emerald-700 text-white border-teal-700 shadow-md ring-2 ring-emerald-300'
+                        ? 'bg-gradient-to-b from-[#065F46] to-[#059669] text-white border-[#059669] shadow-md ring-2 ring-[#A7F3D0]'
                         : item.hasDoctors
-                        ? 'bg-emerald-50/90 border-emerald-300 text-emerald-950 font-bold hover:bg-emerald-100'
-                        : 'bg-slate-50 border-slate-200 text-slate-400 opacity-70 hover:opacity-100'
+                        ? 'bg-[#ECFDF5] border-[#A7F3D0] text-[#065F46] font-bold hover:bg-[#D1FAE5]'
+                        : 'bg-[#FCFBF7] border-[#EAE4D3] text-[#7C8F86] opacity-75 hover:opacity-100'
                     }`}
                   >
                     <span className="text-[10px] font-extrabold uppercase leading-none">

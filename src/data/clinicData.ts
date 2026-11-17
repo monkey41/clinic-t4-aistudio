@@ -116,33 +116,34 @@ export function notifyClinicDataChanged(): void {
   }
 }
 
-// Luminous pastel lavender-sky-blush theme palette matching brand design
+// 65% Warm Ivory & White / 25% Emerald & Mint / 10% Gold & Complementary Accents
 export function getThemePalette(_isDark?: boolean, _darkColor?: string) {
   return {
     backdropClass: '',
-    outerBg: 'aura-page-bg text-[#1E2252]',
-    pageBg: 'aura-page-bg text-[#1E2252]',
-    shellBg: 'aura-shell border-x border-white/75 text-[#1E2252]',
-    headerBg: 'bg-white/75 border-b border-white/85 text-[#1E2252]',
-    cardBg: 'bg-white/82 backdrop-blur-md border-white/90 text-[#1E2252]',
-    card: 'bg-white/82 backdrop-blur-md border-white/90 text-[#1E2252]',
-    softCardBg: 'bg-[#EDE8FC]/85 border-[#D8CCF9] text-[#1E2252]',
-    cardAlt: 'bg-white/90 border-[#E5E0FA] text-[#1E2252]',
-    subtleBg: 'bg-[#F4F1FF]/80 border-[#E2DBFA] text-[#1E2252]',
-    headingText: 'text-[#1E2252]',
-    heading: 'text-[#1E2252]',
-    subText: 'text-slate-600',
-    subtext: 'text-slate-600',
-    mutedText: 'text-slate-400',
-    accentText: 'text-[#6D4AFF]',
-    primaryBtn: 'bg-gradient-to-r from-[#A855F7] via-[#8B5CF6] to-[#6366F1] hover:brightness-105 text-white',
-    secondaryBtn: 'bg-gradient-to-r from-[#EC4899] to-[#8B5CF6] hover:brightness-105 text-white',
-    badge: 'bg-[#EDE8FC] text-[#5B3DF5] border-[#D8CCF9]',
-    border: 'border-[#E6E1FB]',
-    divider: 'border-[#EAE6FC]',
-    input: 'bg-white/90 border-[#DFD8FA] text-[#1E2252] placeholder:text-slate-400',
-    navBg: 'bg-white/88 border-t border-white/90',
-    footerBg: 'border-t border-white/80 bg-white/70 text-slate-600',
+    outerBg: 'aura-page-bg text-[#122B22]',
+    pageBg: 'aura-page-bg text-[#122B22]',
+    shellBg: 'aura-shell border-x border-[#EAE4D3] text-[#122B22]',
+    headerBg: 'bg-[#FCFBF7]/92 border-b border-[#EAE4D3] text-[#122B22]',
+    cardBg: 'bg-white/95 backdrop-blur-md border-[#EAE4D3] text-[#122B22]',
+    card: 'bg-white/95 backdrop-blur-md border-[#EAE4D3] text-[#122B22]',
+    softCardBg: 'bg-[#ECFDF5] border-[#A7F3D0] text-[#122B22]',
+    cardAlt: 'bg-[#FBF9F2] border-[#EAE4D3] text-[#122B22]',
+    subtleBg: 'bg-[#F7F4EC] border-[#E6DFCC] text-[#122B22]',
+    headingText: 'text-[#122B22]',
+    heading: 'text-[#122B22]',
+    subText: 'text-[#4B6358]',
+    subtext: 'text-[#4B6358]',
+    mutedText: 'text-[#7C8F86]',
+    accentText: 'text-[#059669]',
+    primaryBtn: 'bg-gradient-to-r from-[#059669] via-[#10B981] to-[#047857] hover:brightness-105 text-white',
+    secondaryBtn: 'bg-gradient-to-r from-[#D97706] to-[#F59E0B] hover:brightness-105 text-white',
+    badge: 'bg-[#ECFDF5] text-[#065F46] border-[#A7F3D0]',
+    goldBadge: 'bg-[#FEF3C7] text-[#92400E] border-[#FDE68A]',
+    border: 'border-[#EAE4D3]',
+    divider: 'border-[#EDE7D9]',
+    input: 'bg-white border-[#DFD8C5] text-[#122B22] placeholder:text-[#8A9B93]',
+    navBg: 'bg-[#FCFBF7]/95 border-t border-[#EAE4D3]',
+    footerBg: 'border-t border-[#EAE4D3] bg-[#FCFBF7]/90 text-[#4B6358]',
   };
 }
 
@@ -934,6 +935,28 @@ export const DEFAULT_PRODUCTS: Product[] = [
     inStock: true,
     image: 'https://images.unsplash.com/photo-1584744982491-665216d95f8b?auto=format&fit=crop&w=600&q=80',
     description: 'Warm steam inhalation for nasal congestion, throat irritation, and sinus discomfort relief.'
+  },
+  {
+    id: 'skin-1',
+    name: 'Dermatologist SPF 50+ Matte Gel Sunscreen',
+    category: 'skincare',
+    price: 380,
+    originalPrice: 450,
+    unit: '50g Tube',
+    inStock: true,
+    image: 'https://images.unsplash.com/photo-1556228578-8c89e6adf883?auto=format&fit=crop&w=600&q=80',
+    description: 'Non-comedogenic broad-spectrum UVA/UVB skin protection gel ideal for sensitive and acne-prone skin.'
+  },
+  {
+    id: 'skin-2',
+    name: 'Ceramide & Oat Barrier Repair Moisturizing Lotion',
+    category: 'skincare',
+    price: 295,
+    originalPrice: 350,
+    unit: '100ml Bottle',
+    inStock: true,
+    image: 'https://images.unsplash.com/photo-1570194065650-d99fb4b38b15?auto=format&fit=crop&w=600&q=80',
+    description: 'Fragrance-free deep hydration formula recommended for dry, itchy, or eczema-prone skin.'
   }
 ];
 
@@ -1239,7 +1262,7 @@ export const DEFAULT_PROMOTIONS_CONFIG: ClinicPromotionsConfig = {
   runningBanner: {
     enabled: false,
     text: '',
-    bgPreset: 'violet',
+    bgPreset: 'teal',
     linkTab: 'offers',
   },
   festiveDecoration: {
@@ -1247,6 +1270,14 @@ export const DEFAULT_PROMOTIONS_CONFIG: ClinicPromotionsConfig = {
     festival: 'none',
     presetAssetId: '',
     intensity: 'subtle',
+  },
+  topShowcase: {
+    enabled: false,
+    title: '',
+    subtitle: '',
+    mediaUrls: [],
+    ctaLabel: 'View Offer',
+    ctaTab: 'offers',
   },
   footerShowcase: {
     enabled: false,
@@ -1270,6 +1301,13 @@ export function getPromotionsConfig(): ClinicPromotionsConfig {
           festiveDecoration: {
             ...DEFAULT_PROMOTIONS_CONFIG.festiveDecoration,
             ...parsed.festiveDecoration,
+          },
+          topShowcase: {
+            ...DEFAULT_PROMOTIONS_CONFIG.topShowcase!,
+            ...(parsed.topShowcase || {}),
+            mediaUrls: Array.isArray(parsed.topShowcase?.mediaUrls)
+              ? parsed.topShowcase.mediaUrls
+              : [],
           },
           footerShowcase: { ...DEFAULT_PROMOTIONS_CONFIG.footerShowcase, ...parsed.footerShowcase },
           updatedAt: parsed.updatedAt,

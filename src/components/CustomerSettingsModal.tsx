@@ -5,7 +5,6 @@ import {
   BellRing,
   MapPin,
   RefreshCw,
-  Download,
   CheckCircle2,
   AlertCircle,
   Loader2,
@@ -23,8 +22,6 @@ interface CustomerSettingsModalProps {
   onClose: () => void;
   onNotificationPermissionChange?: (perm: NotificationPermission | 'unsupported') => void;
   onRefreshCloudData?: () => Promise<void>;
-  isAppInstalled: boolean;
-  onInstallPwa: () => void;
 }
 
 export const CustomerSettingsModal: React.FC<CustomerSettingsModalProps> = ({
@@ -32,8 +29,6 @@ export const CustomerSettingsModal: React.FC<CustomerSettingsModalProps> = ({
   onClose,
   onNotificationPermissionChange,
   onRefreshCloudData,
-  isAppInstalled,
-  onInstallPwa,
 }) => {
   const [notifPerm, setNotifPerm] = useState<NotificationPermission | 'unsupported'>(() =>
     getNotificationPermission()
@@ -175,16 +170,16 @@ export const CustomerSettingsModal: React.FC<CustomerSettingsModalProps> = ({
   const content = (
     <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center sm:p-4 isolate">
       <div
-        className="fixed inset-0 bg-[#1E1B4B]/45 backdrop-blur-xs"
+        className="fixed inset-0 bg-[#122B22]/45 backdrop-blur-xs"
         onClick={onClose}
       />
 
-      <div className="relative z-10 w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-white overflow-hidden animate-in slide-in-from-bottom-4 duration-200">
+      <div className="relative z-10 w-full max-w-md bg-[#FCFBF7] rounded-t-3xl sm:rounded-3xl shadow-2xl border border-[#EAE4D3] overflow-hidden animate-in slide-in-from-bottom-4 duration-200">
         {/* Header */}
-        <div className="px-5 py-4 bg-gradient-to-r from-[#8B5CF6] via-[#7C3AED] to-[#6366F1] text-white flex items-center justify-between">
+        <div className="px-5 py-4 bg-gradient-to-r from-[#065F46] via-[#059669] to-[#10B981] text-white flex items-center justify-between">
           <div>
             <h3 className="font-black text-base tracking-tight">Settings</h3>
-            <p className="text-[11px] text-purple-100">Notifications, Location & App</p>
+            <p className="text-[11px] text-emerald-100">Notifications, Location & Sync</p>
           </div>
           <button
             type="button"
@@ -196,26 +191,26 @@ export const CustomerSettingsModal: React.FC<CustomerSettingsModalProps> = ({
           </button>
         </div>
 
-        <div className="p-4 space-y-3 max-h-[78vh] overflow-y-auto bg-[#FAF9FF]">
+        <div className="p-4 space-y-3 max-h-[78vh] overflow-y-auto bg-[#FCFBF7]">
           {statusMsg && (
-            <div className="px-3.5 py-2.5 rounded-xl bg-[#EDE8FC] border border-[#D8CCF9] text-[#1E2252] text-xs font-semibold flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-[#6D4AFF] shrink-0" />
+            <div className="px-3.5 py-2.5 rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] text-[#122B22] text-xs font-semibold flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-[#059669] shrink-0" />
               <span>{statusMsg}</span>
             </div>
           )}
 
           {/* 1. Mobile Notifications */}
-          <div className="p-3.5 rounded-2xl border border-white bg-white shadow-xs space-y-2.5">
+          <div className="p-3.5 rounded-2xl border border-[#EAE4D3] bg-white shadow-xs space-y-2.5">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-[#EEF0FF] text-[#6366F1] flex items-center justify-center shrink-0">
+                <div className="w-9 h-9 rounded-xl bg-[#ECFDF5] text-[#059669] flex items-center justify-center shrink-0">
                   <BellRing className="w-4 h-4" />
                 </div>
                 <div>
-                  <h4 className="font-extrabold text-xs text-[#1E2252]">
+                  <h4 className="font-extrabold text-xs text-[#122B22]">
                     Mobile Notifications
                   </h4>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-[11px] text-[#4B6358]">
                     {!isNotificationSupported()
                       ? 'Not supported on this browser'
                       : notifPerm === 'granted'
@@ -231,7 +226,7 @@ export const CustomerSettingsModal: React.FC<CustomerSettingsModalProps> = ({
                 <button
                   type="button"
                   onClick={handleTestNotification}
-                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black cursor-pointer shrink-0"
+                  className="px-3 py-1.5 rounded-xl bg-[#059669] hover:bg-[#047857] text-white text-[11px] font-black cursor-pointer shrink-0"
                 >
                   Test Alert
                 </button>
@@ -241,7 +236,7 @@ export const CustomerSettingsModal: React.FC<CustomerSettingsModalProps> = ({
                   <button
                     type="button"
                     onClick={handleEnableNotifications}
-                    className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#A855F7] to-[#6366F1] text-white text-[11px] font-black cursor-pointer shrink-0"
+                    className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#059669] to-[#10B981] text-white text-[11px] font-black cursor-pointer shrink-0"
                   >
                     Allow
                   </button>
@@ -250,25 +245,25 @@ export const CustomerSettingsModal: React.FC<CustomerSettingsModalProps> = ({
             </div>
           </div>
 
-          {/* 2. Location Access (Always offers explicit Allow / Toggle controls) */}
-          <div className="p-3.5 rounded-2xl border border-white bg-white shadow-xs space-y-2.5">
+          {/* 2. Location Access */}
+          <div className="p-3.5 rounded-2xl border border-[#EAE4D3] bg-white shadow-xs space-y-2.5">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-[#FFF0F6] text-[#EC4899] flex items-center justify-center shrink-0">
+                <div className="w-9 h-9 rounded-xl bg-[#FEF3C7] text-[#D97706] flex items-center justify-center shrink-0">
                   <MapPin className="w-4 h-4" />
                 </div>
                 <div>
-                  <h4 className="font-extrabold text-xs text-[#1E2252]">
+                  <h4 className="font-extrabold text-xs text-[#122B22]">
                     Location Access (GPS)
                   </h4>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-[11px] text-[#4B6358]">
                     {locationState === 'granted'
                       ? distanceKm !== null
                         ? `${distanceKm} km from Life Care Clinic`
                         : 'GPS allowed on this device'
                       : locationState === 'denied'
                       ? locationPrefAllowed
-                        ? 'Permission blocked in browser — tap Retry after allowing'
+                        ? 'Permission blocked in browser — tap Retry'
                         : 'Tap Allow Location to enable clinic distance'
                       : locationState === 'unsupported'
                       ? locationPrefAllowed
@@ -279,7 +274,6 @@ export const CustomerSettingsModal: React.FC<CustomerSettingsModalProps> = ({
                 </div>
               </div>
 
-              {/* Dedicated Toggle Switch */}
               <button
                 type="button"
                 role="switch"
@@ -293,8 +287,8 @@ export const CustomerSettingsModal: React.FC<CustomerSettingsModalProps> = ({
                 }}
                 className={`w-11 h-6 rounded-full transition-colors p-0.5 cursor-pointer shrink-0 ${
                   locationState === 'granted' || locationPrefAllowed
-                    ? 'bg-[#6D4AFF]'
-                    : 'bg-slate-200'
+                    ? 'bg-[#059669]'
+                    : 'bg-stone-200'
                 }`}
               >
                 <span
@@ -312,7 +306,7 @@ export const CustomerSettingsModal: React.FC<CustomerSettingsModalProps> = ({
                 type="button"
                 onClick={handleAllowLocation}
                 disabled={locLoading}
-                className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-[#EC4899] to-[#8B5CF6] hover:brightness-105 disabled:opacity-60 text-white text-[11px] font-black cursor-pointer flex items-center justify-center gap-1.5"
+                className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-[#059669] to-[#D97706] hover:brightness-105 disabled:opacity-60 text-white text-[11px] font-black cursor-pointer flex items-center justify-center gap-1.5"
               >
                 {locLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 <span>
@@ -328,7 +322,7 @@ export const CustomerSettingsModal: React.FC<CustomerSettingsModalProps> = ({
                 <button
                   type="button"
                   onClick={handleDisableLocation}
-                  className="py-2 px-3 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 text-[11px] font-bold cursor-pointer"
+                  className="py-2 px-3 rounded-xl border border-[#EAE4D3] bg-[#F7F4EC] hover:bg-stone-200 text-[#4B6358] text-[11px] font-bold cursor-pointer"
                 >
                   Turn Off
                 </button>
@@ -344,47 +338,25 @@ export const CustomerSettingsModal: React.FC<CustomerSettingsModalProps> = ({
           </div>
 
           {/* 3. Live Cloud Sync */}
-          <div className="p-3.5 rounded-2xl border border-white bg-white shadow-xs flex items-center justify-between gap-2">
+          <div className="p-3.5 rounded-2xl border border-[#EAE4D3] bg-white shadow-xs flex items-center justify-between gap-2">
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-[#ECFAFF] text-[#0284C7] flex items-center justify-center shrink-0">
+              <div className="w-9 h-9 rounded-xl bg-[#ECFDF5] text-[#059669] flex items-center justify-center shrink-0">
                 <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
               </div>
               <div>
-                <h4 className="font-extrabold text-xs text-[#1E2252]">Sync Clinic Data</h4>
-                <p className="text-[11px] text-slate-500">Refresh doctors, offers & updates</p>
+                <h4 className="font-extrabold text-xs text-[#122B22]">Sync Clinic Data</h4>
+                <p className="text-[11px] text-[#4B6358]">Refresh doctors, offers & updates</p>
               </div>
             </div>
             <button
               type="button"
               onClick={handleSync}
               disabled={syncing}
-              className="px-3 py-1.5 rounded-xl bg-[#6D4AFF] hover:bg-[#5B3DF5] disabled:opacity-60 text-white text-[11px] font-black cursor-pointer shrink-0"
+              className="px-3 py-1.5 rounded-xl bg-[#059669] hover:bg-[#047857] disabled:opacity-60 text-white text-[11px] font-black cursor-pointer shrink-0"
             >
               {syncing ? 'Syncing...' : 'Refresh'}
             </button>
           </div>
-
-          {/* 4. Install App (Only if not already installed) */}
-          {!isAppInstalled && (
-            <div className="p-3.5 rounded-2xl border border-[#D8CCF9] bg-[#F4F1FF] flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#A855F7] to-[#6366F1] text-white flex items-center justify-center shrink-0">
-                  <Download className="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 className="font-extrabold text-xs text-[#1E2252]">Install App</h4>
-                  <p className="text-[11px] text-[#5B3DF5]">Add to your phone home screen</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={onInstallPwa}
-                className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#A855F7] to-[#6366F1] text-white text-[11px] font-black cursor-pointer shrink-0"
-              >
-                Install
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </div>
