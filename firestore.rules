@@ -70,6 +70,13 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // PINCH Assistant Updates:
+    // Public read (customers view published non-expired updates); write restricted to verified admins.
+    match /pinch_updates/{updateId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // Clinic Configuration (Phone, WhatsApp, Timings, Booking Links):
     // Public read; write restricted to authorized admins.
     match /clinic_config/{configId} {

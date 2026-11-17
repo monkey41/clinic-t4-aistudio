@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { SpecialOffer } from '../types';
 import {
-  DEFAULT_SPECIAL_OFFERS,
   CLINIC_CONFIG,
   DOCTOR_BOOKING_URL,
   PATHOLOGY_BOOKING_URL,
@@ -32,8 +31,6 @@ export const SpecialOfferPage: React.FC<SpecialOfferPageProps> = ({
 }) => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const p = getThemePalette();
-
-  const displayOffers = offers.length > 0 ? offers : DEFAULT_SPECIAL_OFFERS;
 
   const handleCopyCode = (id: string, code: string) => {
     navigator.clipboard.writeText(code);
@@ -70,7 +67,14 @@ export const SpecialOfferPage: React.FC<SpecialOfferPageProps> = ({
 
       {/* Active Special Offers List */}
       <div className="space-y-3.5">
-        {displayOffers.map((offer) => {
+        {offers.length === 0 ? (
+          <div className={`rounded-3xl p-8 border text-center space-y-2 ${p.card}`}>
+            <Sparkles className={`w-7 h-7 mx-auto ${p.mutedText}`} />
+            <p className={`text-sm font-extrabold ${p.heading}`}>No special offers right now</p>
+            <p className={`text-xs ${p.subtext}`}>Check back soon for new health and lab packages.</p>
+          </div>
+        ) : (
+          offers.map((offer) => {
           const isPatho = offer.category === 'pathology';
           const isDoctor = offer.category === 'doctor' || offer.category === 'physio';
 
@@ -204,7 +208,8 @@ export const SpecialOfferPage: React.FC<SpecialOfferPageProps> = ({
               </div>
             </div>
           );
-        })}
+        })
+        )}
       </div>
     </section>
   );

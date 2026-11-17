@@ -10,6 +10,7 @@ import {
   ClinicConfig,
   StoreOrder,
   CashTransaction,
+  PinchUpdate,
 } from '../types';
 import kneeBraceImg from '../assets/images/ortho_knee_brace_1790317702669.jpg';
 import lumbarBeltImg from '../assets/images/lumbar_belt_1790317715183.jpg';
@@ -1076,9 +1077,9 @@ export const DEFAULT_SPECIAL_OFFERS: SpecialOffer[] = [
 export function getSpecialOffers(): SpecialOffer[] {
   try {
     const saved = localStorage.getItem('careplus_special_offers');
-    if (saved) {
+    if (saved !== null) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) return parsed;
     }
   } catch (e) {
     console.error(e);
@@ -1176,6 +1177,63 @@ export function isSameLocalDate(isoString: string, targetDate: Date = new Date()
   );
 }
 
+// PINCH Updates Persistence (Admin-published only; starts empty unless admin publishes)
+export function getLocalTodayIso(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+export function isPinchUpdateActive(update: PinchUpdate): boolean {
+  if (!update.published) return false;
+  if (!update.expiryDate) return true;
+  const today = getLocalTodayIso();
+  return update.expiryDate >= today;
+}
+
+export function getPinchUpdates(): PinchUpdate[] {
+  try {
+    const saved = localStorage.getItem('lifecare_pinch_updates');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.error(e);
+  }
+  return [];
+}
+
+export function savePinchUpdates(updates: PinchUpdate[]): void {
+  try {
+    localStorage.setItem('lifecare_pinch_updates', JSON.stringify(updates));
+    notifyClinicDataChanged();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+export function calculateDistanceKm(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c * 10) / 10;
+}
+
 // Reset all store data back to factory defaults
 export function resetAllToFactoryDefaults(): void {
   try {
@@ -1193,4 +1251,5 @@ export function resetAllToFactoryDefaults(): void {
     console.error(e);
   }
 }
+
 

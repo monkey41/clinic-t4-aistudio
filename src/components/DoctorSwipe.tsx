@@ -8,35 +8,55 @@ import {
   Award,
   ExternalLink,
 } from 'lucide-react';
-import { motion } from 'motion/react';
+import {
+  motion,
+  AnimatePresence,
+  useMotionValue,
+  useTransform,
+  PanInfo,
+} from 'motion/react';
 import {
   DOCTOR_BOOKING_URL,
-  getThemePalette,
   addBookingHistoryItem,
 } from '../data/clinicData';
 
 interface DoctorSwipeProps {
   doctors: Doctor[];
   t: Record<string, string>;
+  onViewAll?: () => void;
 }
+
+const ACCENT_GRADIENTS = [
+  'from-teal-600 to-emerald-600',
+  'from-indigo-600 to-blue-600',
+  'from-purple-600 to-fuchsia-600',
+  'from-rose-600 to-orange-500',
+  'from-cyan-600 to-teal-600',
+];
 
 export const DoctorSwipe: React.FC<DoctorSwipeProps> = ({
   doctors,
   t,
+  onViewAll,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [direction, setDirection] = useState<1 | -1>(1);
   const [isFrozen, setIsFrozen] = useState(false);
   const freezeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSwipeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const theme = getThemePalette();
+  const dragX = useMotionValue(0);
+  const dragRotate = useTransform(dragX, [-180, 0, 180], [-9, 0, 9]);
+
   const total = doctors.length || 1;
 
   const handleNext = () => {
+    setDirection(1);
     setCurrentIndex((prev) => (prev + 1) % total);
   };
 
   const handlePrev = () => {
+    setDirection(-1);
     setCurrentIndex((prev) => (prev - 1 + total) % total);
   };
 
@@ -49,14 +69,15 @@ export const DoctorSwipe: React.FC<DoctorSwipeProps> = ({
   };
 
   useEffect(() => {
-    if (isFrozen) {
+    if (isFrozen || total <= 1) {
       if (autoSwipeTimerRef.current) clearInterval(autoSwipeTimerRef.current);
       return;
     }
 
     autoSwipeTimerRef.current = setInterval(() => {
+      setDirection(1);
       setCurrentIndex((prev) => (prev + 1) % total);
-    }, 4500);
+    }, 5000);
 
     return () => {
       if (autoSwipeTimerRef.current) clearInterval(autoSwipeTimerRef.current);
@@ -65,157 +86,159 @@ export const DoctorSwipe: React.FC<DoctorSwipeProps> = ({
 
   if (doctors.length === 0) return null;
 
+  const activeDoc = doctors[currentIndex % total];
+  const nextDoc = doctors[(currentIndex + 1) % total];
+  const thirdDoc = doctors[(currentIndex + 2) % total];
+  const activeGradient = ACCENT_GRADIENTS[currentIndex % ACCENT_GRADIENTS.length];
+
+  const handleDragEnd = (_e: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+    triggerTouchFreeze();
+    if (info.offset.x < -50 || info.velocity.x < -300) {
+      handleNext();
+    } else if (info.offset.x > 50 || info.velocity.x > 300) {
+      handlePrev();
+    }
+  };
+
   return (
-    <section className="relative px-2 py-4 select-none">
-      <div className="flex items-center justify-between px-3 mb-2">
-        <h2 className={`font-extrabold text-sm tracking-wide ${theme.headingText}`}>
-          👨‍⚕️ {t.doctors || 'Specialist Doctors'}
+    <section className="relative px-4 py-2 select-none">
+      {/* Compact Header */}
+      <div className="flex items-center justify-between mb-2.5">
+        <h2 className="font-black text-sm tracking-tight text-slate-900">
+          {t.doctors || 'Specialist Doctors'}
         </h2>
-        <span className={`text-[11px] font-bold ${theme.accentText}`}>
-          Swipe cards →
-        </span>
+        {onViewAll && (
+          <button
+            type="button"
+            onClick={onViewAll}
+            className="text-xs font-extrabold text-teal-700 hover:text-teal-900 flex items-center gap-0.5 cursor-pointer whitespace-nowrap"
+          >
+            <span>View All ({doctors.length})</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
 
-      {/* Swipe Stack Container */}
+      {/* Smooth Layered Deck Stack */}
       <div
-        className="relative w-full h-[330px] flex items-center justify-center overflow-hidden"
+        className="relative w-full h-[355px] flex items-center justify-center"
         onTouchStart={triggerTouchFreeze}
         onMouseDown={triggerTouchFreeze}
       >
-        <div className="relative w-full h-full flex items-center justify-center">
-          {doctors.map((doctor, idx) => {
-            let offset = (idx - currentIndex + total) % total;
-            if (offset > total / 2) offset -= total;
+        {/* Background depth cards */}
+        {total > 2 && (
+          <div
+            aria-hidden="true"
+            className="absolute top-4 w-[86%] max-w-[320px] h-[328px] rounded-3xl bg-white border border-slate-200/80 shadow-sm scale-[0.92] opacity-60 pointer-events-none transition-transform duration-300"
+          />
+        )}
+        {total > 1 && thirdDoc && nextDoc && (
+          <div
+            aria-hidden="true"
+            className="absolute top-2 w-[92%] max-w-[338px] h-[332px] rounded-3xl bg-white border border-slate-200 shadow-md scale-[0.96] opacity-85 pointer-events-none transition-transform duration-300"
+          />
+        )}
 
-            const isTop = offset === 0;
-            const isVisible = Math.abs(offset) <= 2;
-            if (!isVisible) return null;
+        {/* Active Draggable Top Card */}
+        <AnimatePresence initial={false} mode="popLayout" custom={direction}>
+          <motion.article
+            key={activeDoc.id}
+            custom={direction}
+            style={{ x: dragX, rotate: dragRotate, touchAction: 'pan-y' }}
+            drag="x"
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={0.85}
+            onDragEnd={handleDragEnd}
+            initial={{ scale: 0.95, opacity: 0, x: direction > 0 ? 48 : -48 }}
+            animate={{ scale: 1, opacity: 1, x: 0 }}
+            exit={{
+              x: direction > 0 ? -240 : 240,
+              opacity: 0,
+              rotate: direction > 0 ? -10 : 10,
+              transition: { duration: 0.2, ease: 'easeOut' },
+            }}
+            transition={{
+              type: 'spring',
+              stiffness: 340,
+              damping: 28,
+              mass: 0.85,
+            }}
+            className="relative z-20 w-full max-w-[356px] h-[336px] rounded-3xl overflow-hidden bg-white border border-slate-200/90 shadow-xl shadow-slate-900/10 flex flex-col justify-between cursor-grab active:cursor-grabbing will-change-transform"
+          >
+            {/* Photo Banner with Colorful Top Strip & Contrast Scrim */}
+            <div className="relative h-[165px] w-full bg-slate-900 overflow-hidden shrink-0">
+              <div className={`absolute top-0 inset-x-0 h-1.5 z-20 bg-gradient-to-r ${activeGradient}`} />
+              <img
+                src={activeDoc.photo}
+                alt={activeDoc.name}
+                className="w-full h-full object-cover object-top pointer-events-none"
+                referrerPolicy="no-referrer"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/20 to-transparent pointer-events-none" />
 
-            const translateY = offset * 14;
-            const scale = 1 - Math.abs(offset) * 0.06;
-            const opacity = 1 - Math.abs(offset) * 0.22;
-            const zIndex = 20 - Math.abs(offset);
+              {/* Bottom Overlay Title over Scrim */}
+              <div className="absolute bottom-2.5 left-3.5 right-3.5 z-10 text-white">
+                <p className="text-[11px] font-bold text-teal-200 tracking-wide truncate">
+                  {activeDoc.department}
+                </p>
+                <h3 className="font-black text-base leading-tight truncate mt-0.5">
+                  {activeDoc.name}
+                </h3>
+              </div>
+            </div>
 
-            return (
-              <motion.article
-                key={doctor.id}
-                drag={isTop ? 'x' : false}
-                dragConstraints={{ left: 0, right: 0 }}
-                dragElastic={0.7}
-                onDragEnd={(_e, info) => {
-                  triggerTouchFreeze();
-                  if (info.offset.x < -60) {
-                    handleNext();
-                  } else if (info.offset.x > 60) {
-                    handlePrev();
-                  }
-                }}
-                onClick={() => {
-                  triggerTouchFreeze();
-                  if (!isTop) {
-                    setCurrentIndex(idx);
-                  }
-                }}
-                animate={{
-                  y: translateY,
-                  scale,
-                  opacity,
-                  zIndex,
-                }}
-                transition={{
-                  type: 'spring',
-                  stiffness: 300,
-                  damping: 25,
-                }}
-                className={`absolute top-0 w-[90%] max-w-[340px] h-[310px] rounded-3xl overflow-hidden border shadow-lg flex flex-col justify-between cursor-grab active:cursor-grabbing ${theme.cardBg} ${
-                  !isTop ? 'cursor-pointer hover:opacity-95' : ''
-                }`}
-                style={{
-                  boxShadow: isTop ? '0 14px 30px -6px rgba(0,0,0,0.12)' : 'none',
-                  touchAction: 'none',
-                }}
-              >
-                {/* Doctor Photo - Compact Height (135px) */}
-                <div className="relative h-[135px] w-full bg-slate-900 overflow-hidden shrink-0">
-                  <img
-                    src={doctor.photo}
-                    alt={doctor.name}
-                    className="w-full h-full object-cover object-top pointer-events-none"
-                    loading="lazy"
-                    referrerPolicy="no-referrer"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
+            {/* Card Body */}
+            <div className="p-4 flex-1 flex flex-col justify-between bg-white">
+              <div className="space-y-1.5">
+                <p className="text-xs font-extrabold text-teal-700 leading-snug line-clamp-1">
+                  {activeDoc.specialty}
+                </p>
 
-                  {/* Colorful Department badge on photo */}
-                  <div className="absolute top-2.5 left-2.5 backdrop-blur-md text-[10px] font-black px-2.5 py-0.5 rounded-lg shadow-sm border border-white/30 flex items-center gap-1 bg-white/95 text-slate-900">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                    <span>{doctor.department}</span>
+                <div className="space-y-1 text-[11px] text-slate-600">
+                  <div className="flex items-center gap-1.5">
+                    <Award className="w-3.5 h-3.5 shrink-0 text-amber-500" />
+                    <span className="truncate font-semibold text-slate-700">
+                      {activeDoc.qualification} · {activeDoc.experience}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 shrink-0 text-teal-600" />
+                    <span className="truncate font-bold text-slate-800">
+                      {activeDoc.timing}
+                    </span>
                   </div>
                 </div>
+              </div>
 
-                {/* Card Body with Vibrant Accents */}
-                <div
-                  className={`p-3.5 flex-1 flex flex-col justify-between border-t ${theme.cardBg}`}
+              {/* Action Row */}
+              <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2">
+                <span className="text-[11px] font-bold text-slate-400 tabular-nums">
+                  {currentIndex + 1} / {doctors.length}
+                </span>
+
+                <a
+                  href={DOCTOR_BOOKING_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    triggerTouchFreeze();
+                    addBookingHistoryItem('doctor', activeDoc.name, activeDoc.timing);
+                  }}
+                  className={`active:scale-95 font-black text-xs px-4 py-2 rounded-xl shadow-sm flex items-center gap-1.5 transition-transform cursor-pointer bg-gradient-to-r ${activeGradient} text-white whitespace-nowrap`}
                 >
-                  <div className="space-y-1">
-                    <div className="flex items-start justify-between gap-1">
-                      <h3
-                        className={`font-black text-sm leading-snug truncate ${theme.headingText}`}
-                      >
-                        {doctor.name}
-                      </h3>
-                      <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full shrink-0">
-                        OPD Open
-                      </span>
-                    </div>
-
-                    <p className="text-[11px] font-extrabold leading-tight text-teal-700">
-                      {doctor.specialty}
-                    </p>
-
-                    <div className="pt-0.5 space-y-1 text-[11px] text-slate-600">
-                      <div className="flex items-center gap-1.5">
-                        <Award className="w-3.5 h-3.5 shrink-0 text-amber-500" />
-                        <span className="truncate font-semibold text-slate-700">
-                          {doctor.qualification} • {doctor.experience}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 shrink-0 text-teal-600" />
-                        <span className="truncate font-bold text-slate-800">
-                          {doctor.timing}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Direct Link Button to Booking Portal */}
-                  <div className="pt-2 flex items-center justify-end border-t border-slate-100 mt-1">
-                    <a
-                      href={DOCTOR_BOOKING_URL}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        triggerTouchFreeze();
-                        addBookingHistoryItem('doctor', doctor.name, doctor.timing);
-                      }}
-                      className="active:scale-95 font-black text-xs px-4 py-2 rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer bg-gradient-to-r from-teal-700 to-emerald-700 hover:from-teal-800 hover:to-emerald-800 text-white"
-                    >
-                      <CalendarCheck className="w-3.5 h-3.5" />
-                      <span>Book OPD</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                  </div>
-                </div>
-              </motion.article>
-            );
-          })}
-        </div>
+                  <CalendarCheck className="w-3.5 h-3.5" />
+                  <span>Book OPD</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            </div>
+          </motion.article>
+        </AnimatePresence>
       </div>
 
-      {/* Swipe Controls and Dots */}
-      <div className="flex items-center justify-center gap-3 mt-2 px-4">
+      {/* Smooth Touch-Friendly Controls */}
+      <div className="flex items-center justify-center gap-3 mt-1">
         <button
           type="button"
           onClick={() => {
@@ -223,25 +246,26 @@ export const DoctorSwipe: React.FC<DoctorSwipeProps> = ({
             triggerTouchFreeze();
           }}
           aria-label="Previous Doctor"
-          className={`w-10 h-10 rounded-full border flex items-center justify-center shadow-xs transition-transform active:scale-90 cursor-pointer shrink-0 ${theme.cardBg}`}
+          className="min-w-[44px] min-h-[44px] rounded-full bg-white border border-slate-200 hover:bg-slate-50 flex items-center justify-center shadow-xs transition-transform active:scale-90 cursor-pointer shrink-0 text-slate-700"
         >
           <ChevronLeft className="w-5 h-5" />
         </button>
 
-        <div className="flex items-center gap-1.5 flex-wrap justify-center">
+        <div className="flex items-center gap-1.5 flex-wrap justify-center max-w-[200px]">
           {doctors.map((_, i) => (
             <button
               key={i}
               type="button"
               onClick={() => {
+                setDirection(i >= currentIndex ? 1 : -1);
                 setCurrentIndex(i);
                 triggerTouchFreeze();
               }}
               aria-label={`Go to doctor ${i + 1}`}
-              className={`h-2 transition-all rounded-full cursor-pointer ${
+              className={`h-2 transition-all duration-200 rounded-full cursor-pointer ${
                 i === currentIndex
-                  ? `w-5 ${theme.primaryBtn}`
-                  : 'w-2 bg-slate-400/50 hover:bg-slate-400'
+                  ? 'w-6 bg-teal-700'
+                  : 'w-2 bg-slate-300 hover:bg-slate-400'
               }`}
             />
           ))}
@@ -254,7 +278,7 @@ export const DoctorSwipe: React.FC<DoctorSwipeProps> = ({
             triggerTouchFreeze();
           }}
           aria-label="Next Doctor"
-          className={`w-10 h-10 rounded-full border flex items-center justify-center shadow-xs transition-transform active:scale-90 cursor-pointer shrink-0 ${theme.cardBg}`}
+          className="min-w-[44px] min-h-[44px] rounded-full bg-white border border-slate-200 hover:bg-slate-50 flex items-center justify-center shadow-xs transition-transform active:scale-90 cursor-pointer shrink-0 text-slate-700"
         >
           <ChevronRight className="w-5 h-5" />
         </button>

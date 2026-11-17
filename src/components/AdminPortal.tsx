@@ -10,6 +10,8 @@ import {
   BookingHistoryItem,
   StoreOrder,
   CashTransaction,
+  PinchCategory,
+  PinchUpdate,
 } from '../types';
 import {
   getDoctors,
@@ -37,6 +39,10 @@ import {
   saveCashTransactions,
   addCashTransaction,
   isSameLocalDate,
+  getPinchUpdates,
+  savePinchUpdates,
+  isPinchUpdateActive,
+  getLocalTodayIso,
   resetAllToFactoryDefaults,
 } from '../data/clinicData';
 import {
@@ -85,6 +91,9 @@ import {
   ShoppingBag,
   KeyRound,
   Wallet,
+  MessageSquareHeart,
+  HardDrive,
+  Cloud,
 } from 'lucide-react';
 import {
   getFirebaseAuth,
@@ -111,6 +120,12 @@ import {
   syncAdminOrdersToFirestore,
   fetchTransactionsFromFirestore,
   syncTransactionsToFirestore,
+  syncOffersToFirestore,
+  fetchOffersFromFirestore,
+  syncPinchUpdatesToFirestore,
+  deletePinchUpdateFromFirestore,
+  fetchPinchUpdatesFromFirestore,
+  getSessionFirestoreStats,
   validateStrongPassword,
   sendAdminPasswordReset,
   updateAdminPassword,
@@ -125,6 +140,7 @@ interface AdminPortalProps {
 
 type AdminTab =
   | 'overview'
+  | 'pinch'
   | 'doctors'
   | 'arrivals'
   | 'offers'
@@ -233,6 +249,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
   const [cashTransactions, setCashTransactions] = useState<CashTransaction[]>(() =>
     getCashTransactions()
   );
+  const [pinchUpdates, setPinchUpdates] = useState<PinchUpdate[]>(() => getPinchUpdates());
 
   // Ledger / Walk-in Order Modal States
   const [txModalOpen, setTxModalOpen] = useState(false);
@@ -278,6 +295,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
     setBookingHistory(getBookingHistory());
     setStoreOrders(getStoreOrders());
     setCashTransactions(getCashTransactions());
+    setPinchUpdates(getPinchUpdates());
   };
 
   useEffect(() => {
@@ -301,9 +319,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
 
   const syncOperationsFromCloud = async () => {
     try {
-      const [cloudOrders, cloudTxs] = await Promise.all([
+      const [cloudOrders, cloudTxs, cloudOffers, cloudPinch] = await Promise.all([
         fetchAdminOrdersFromFirestore(),
         fetchTransactionsFromFirestore(),
+        fetchOffersFromFirestore(),
+        fetchPinchUpdatesFromFirestore(),
       ]);
       if (cloudOrders && cloudOrders.length > 0) {
         const local = getStoreOrders();
@@ -324,6 +344,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
         );
         saveCashTransactions(listTx);
         setCashTransactions(listTx);
+      }
+      if (cloudOffers && cloudOffers.length > 0) {
+        saveSpecialOffers(cloudOffers);
+        setSpecialOffers(cloudOffers);
+      }
+      if (cloudPinch && Array.isArray(cloudPinch)) {
+        savePinchUpdates(cloudPinch);
+        setPinchUpdates(cloudPinch);
       }
     } catch {
       // ignore offline
@@ -989,7 +1017,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
     setOfferModalOpen(true);
   };
 
-  const handleSaveOffer = (e: React.FormEvent) => {
+  const handleSaveOffer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!offerForm.title.trim()) return;
 
@@ -1005,15 +1033,122 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
     setSpecialOffers(updated);
     saveSpecialOffers(updated);
     setOfferModalOpen(false);
-    showToast(editingOffer ? 'Special offer updated!' : 'New special offer added!');
+    const synced = await syncOffersToFirestore(updated);
+    showToast(
+      synced
+        ? editingOffer
+          ? 'Offer updated & synced to customers!'
+          : 'New offer published to customers!'
+        : 'Offer saved locally (sign in with Firebase to publish to all phones).'
+    );
   };
 
-  const handleDeleteOffer = (id: string) => {
+  const handleDeleteOffer = async (id: string) => {
     if (window.confirm('Delete this special offer?')) {
       const updated = specialOffers.filter((o) => o.id !== id);
       setSpecialOffers(updated);
       saveSpecialOffers(updated);
+      await syncOffersToFirestore(updated);
       showToast('Special offer deleted.');
+    }
+  };
+
+  // ----------------------------------------------------------------------
+  // PINCH Updates Management (Verified Admin Only)
+  // ----------------------------------------------------------------------
+  const [pinchModalOpen, setPinchModalOpen] = useState(false);
+  const [editingPinch, setEditingPinch] = useState<PinchUpdate | null>(null);
+  const [isSavingPinch, setIsSavingPinch] = useState(false);
+  const [pinchForm, setPinchForm] = useState<PinchUpdate>({
+    id: '',
+    title: '',
+    category: 'Doctor visits',
+    date: getLocalTodayIso(),
+    timing: '10:00 AM - 02:00 PM',
+    description: '',
+    expiryDate: getLocalTodayIso(),
+    published: true,
+    createdAt: '',
+  });
+
+  const handleOpenAddPinch = () => {
+    const todayIso = getLocalTodayIso();
+    setEditingPinch(null);
+    setPinchForm({
+      id: `pinch-${Date.now()}`,
+      title: '',
+      category: 'Doctor visits',
+      date: todayIso,
+      timing: '10:00 AM - 02:00 PM',
+      description: '',
+      expiryDate: todayIso,
+      published: true,
+      createdAt: new Date().toISOString(),
+    });
+    setPinchModalOpen(true);
+  };
+
+  const handleOpenEditPinch = (item: PinchUpdate) => {
+    setEditingPinch(item);
+    setPinchForm({ ...item });
+    setPinchModalOpen(true);
+  };
+
+  const handleSavePinch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAuthenticated || !pinchForm.title.trim()) return;
+
+    setIsSavingPinch(true);
+    const nowIso = new Date().toISOString();
+    const cleanItem: PinchUpdate = {
+      ...pinchForm,
+      id: editingPinch ? editingPinch.id : pinchForm.id || `pinch-${Date.now()}`,
+      title: pinchForm.title.trim(),
+      description: pinchForm.description.trim(),
+      timing: pinchForm.timing.trim(),
+      createdAt: editingPinch ? editingPinch.createdAt : nowIso,
+      updatedAt: nowIso,
+    };
+
+    const updated = editingPinch
+      ? pinchUpdates.map((u) => (u.id === editingPinch.id ? cleanItem : u))
+      : [cleanItem, ...pinchUpdates];
+
+    setPinchUpdates(updated);
+    savePinchUpdates(updated);
+    const synced = await syncPinchUpdatesToFirestore(updated);
+    setIsSavingPinch(false);
+    setPinchModalOpen(false);
+    showToast(
+      synced
+        ? cleanItem.published
+          ? 'PINCH update published to Firestore!'
+          : 'PINCH draft saved to Firestore.'
+        : 'Saved locally (cloud sync unavailable).'
+    );
+  };
+
+  const handleTogglePinchPublish = async (item: PinchUpdate) => {
+    if (!isAuthenticated) return;
+    const updated = pinchUpdates.map((u) =>
+      u.id === item.id
+        ? { ...u, published: !u.published, updatedAt: new Date().toISOString() }
+        : u
+    );
+    setPinchUpdates(updated);
+    savePinchUpdates(updated);
+    await syncPinchUpdatesToFirestore(updated);
+    showToast(!item.published ? 'PINCH update published live!' : 'PINCH update set to draft.');
+  };
+
+  const handleDeletePinch = async (id: string) => {
+    if (!isAuthenticated) return;
+    if (window.confirm('Delete this PINCH update?')) {
+      const updated = pinchUpdates.filter((u) => u.id !== id);
+      setPinchUpdates(updated);
+      savePinchUpdates(updated);
+      await deletePinchUpdateFromFirestore(id, updated);
+      showToast('PINCH update deleted.');
     }
   };
 
@@ -1421,6 +1556,86 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
     [scopedTransactions]
   );
 
+  // Firebase & Cloudflare Storage / Data Usage Metrics
+  const hostingUsageStats = useMemo(() => {
+    const byteSize = (obj: unknown): number => {
+      try {
+        return new Blob([JSON.stringify(obj)]).size;
+      } catch {
+        return JSON.stringify(obj).length;
+      }
+    };
+
+    const docsBytes = byteSize(doctors);
+    const productsBytes = byteSize(products);
+    const offersBytes = byteSize(specialOffers);
+    const pinchBytes = byteSize(pinchUpdates);
+    const notifBytes = byteSize(notifications);
+    const arrivalsBytes = byteSize(unannouncedArrivals);
+    const ordersBytes = byteSize(storeOrders);
+    const ledgerBytes = byteSize(cashTransactions);
+    const testsBytes = byteSize(pathologyTests);
+
+    const totalDataBytes =
+      docsBytes +
+      productsBytes +
+      offersBytes +
+      pinchBytes +
+      notifBytes +
+      arrivalsBytes +
+      ordersBytes +
+      ledgerBytes +
+      testsBytes;
+
+    const totalDataKb = Math.round((totalDataBytes / 1024) * 10) / 10;
+    const doctorsDocKb = Math.round((docsBytes / 1024) * 10) / 10;
+    const singleDocPct = Math.min(100, Math.round((doctorsDocKb / 1024) * 1000) / 10);
+    const firestoreStoragePct = Math.min(
+      100,
+      Math.round((totalDataKb / (1024 * 1024)) * 10000) / 10000
+    );
+
+    const ops = getSessionFirestoreStats();
+    const totalLocalKb = (() => {
+      try {
+        let sum = 0;
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i) || '';
+          sum += (localStorage.getItem(k) || '').length + k.length;
+        }
+        return Math.round((sum / 1024) * 10) / 10;
+      } catch {
+        return totalDataKb;
+      }
+    })();
+
+    return {
+      totalDataKb,
+      doctorsDocKb,
+      singleDocPct,
+      firestoreStoragePct,
+      readsToday: ops.reads,
+      writesToday: ops.writes,
+      localStorageKb: totalLocalKb,
+      docCount:
+        7 +
+        products.length +
+        storeOrders.length +
+        adminList.length,
+    };
+  }, [
+    doctors,
+    products,
+    specialOffers,
+    pinchUpdates,
+    notifications,
+    unannouncedArrivals,
+    storeOrders,
+    cashTransactions,
+    pathologyTests,
+    adminList.length,
+  ]);
+
   // ----------------------------------------------------------------------
   // If Checking Auth State -> Show Loading Spinner
   // ----------------------------------------------------------------------
@@ -1767,6 +1982,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
           >
             <LayoutDashboard className="w-3.5 h-3.5" />
             <span>Today</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('pinch')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              activeTab === 'pinch'
+                ? 'bg-gradient-to-r from-teal-700 to-emerald-600 text-white shadow-xs'
+                : 'bg-teal-50 text-teal-800 hover:bg-teal-100'
+            }`}
+          >
+            <MessageSquareHeart className="w-3.5 h-3.5" />
+            <span>PINCH ({pinchUpdates.length})</span>
           </button>
 
           <button
@@ -2163,6 +2391,225 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                 </div>
               )}
             </div>
+
+            {/* Compact Hosting Usage & Limits Dashboard (Firebase + Cloudflare) */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-3.5 space-y-3 shadow-2xs">
+              <div className="flex items-center justify-between gap-2">
+                <h4 className="font-black text-xs text-slate-900 flex items-center gap-1.5">
+                  <HardDrive className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Hosting, Data & Storage Limits</span>
+                </h4>
+                <span className="text-[10px] font-bold text-slate-500 tabular-nums">
+                  Live Snapshot
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* Firebase Firestore */}
+                <div className="p-3 rounded-xl border border-amber-200 bg-amber-50/50 space-y-2">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-black text-amber-950 flex items-center gap-1">
+                      <Database className="w-3.5 h-3.5 text-amber-600" />
+                      Firebase Spark Tier
+                    </span>
+                    <span className="font-bold text-amber-800 tabular-nums">
+                      {hostingUsageStats.totalDataKb} KB / 1 GB
+                    </span>
+                  </div>
+
+                  {/* Doctors Doc vs 1 MiB Single Document Limit */}
+                  <div>
+                    <div className="flex justify-between text-[10px] font-semibold text-slate-600 mb-1 tabular-nums">
+                      <span>Doctors Doc (1 MB cap)</span>
+                      <span>
+                        {hostingUsageStats.doctorsDocKb} KB ({hostingUsageStats.singleDocPct}%)
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-amber-100 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${
+                          hostingUsageStats.singleDocPct >= 85
+                            ? 'bg-rose-600'
+                            : hostingUsageStats.singleDocPct >= 60
+                            ? 'bg-amber-500'
+                            : 'bg-emerald-600'
+                        }`}
+                        style={{ width: `${Math.max(3, hostingUsageStats.singleDocPct)}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1.5 pt-1 text-[10px] tabular-nums">
+                    <div className="bg-white px-2 py-1 rounded-lg border border-amber-100">
+                      <span className="text-slate-500 block">Session Reads</span>
+                      <span className="font-black text-slate-900">
+                        {hostingUsageStats.readsToday} / 50k day
+                      </span>
+                    </div>
+                    <div className="bg-white px-2 py-1 rounded-lg border border-amber-100">
+                      <span className="text-slate-500 block">Session Writes</span>
+                      <span className="font-black text-slate-900">
+                        {hostingUsageStats.writesToday} / 20k day
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Cloudflare Pages / Workers */}
+                <div className="p-3 rounded-xl border border-blue-200 bg-blue-50/50 space-y-2">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-black text-blue-950 flex items-center gap-1">
+                      <Cloud className="w-3.5 h-3.5 text-blue-600" />
+                      Cloudflare Free Plan
+                    </span>
+                    <span className="font-bold text-emerald-700">Within Limits</span>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-[10px] font-semibold text-slate-600 mb-1 tabular-nums">
+                      <span>Device Cache Usage</span>
+                      <span>{hostingUsageStats.localStorageKb} KB / 5,120 KB</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-blue-100 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-blue-600"
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            Math.max(3, Math.round((hostingUsageStats.localStorageKb / 5120) * 100))
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1.5 pt-1 text-[10px] tabular-nums">
+                    <div className="bg-white px-2 py-1 rounded-lg border border-blue-100">
+                      <span className="text-slate-500 block">Static Bandwidth</span>
+                      <span className="font-black text-emerald-700">Unlimited</span>
+                    </div>
+                    <div className="bg-white px-2 py-1 rounded-lg border border-blue-100">
+                      <span className="text-slate-500 block">Files / Max Size</span>
+                      <span className="font-black text-slate-900">~25 / 25 MB</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ================================================================ */}
+        {/* TAB 0B: PINCH UPDATES MANAGER (Verified Admins Only)             */}
+        {/* ================================================================ */}
+        {activeTab === 'pinch' && (
+          <div className="space-y-4 animate-in fade-in">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h3 className="font-black text-base text-slate-900 flex items-center gap-1.5">
+                  <MessageSquareHeart className="w-4 h-4 text-teal-700" />
+                  <span>PINCH Assistant Updates</span>
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Only published, non-expired updates appear to customers in PINCH.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleOpenAddPinch}
+                className="py-2 px-3 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-extrabold text-xs shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>New Update</span>
+              </button>
+            </div>
+
+            {pinchUpdates.length === 0 ? (
+              <div className="bg-white rounded-2xl p-8 text-center border border-slate-200 space-y-2">
+                <p className="text-xs font-bold text-slate-700">No PINCH updates published yet.</p>
+                <p className="text-[11px] text-slate-500">
+                  Add doctor visits, schedule changes, pharmacy timings, or health camps.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {pinchUpdates.map((item) => {
+                  const active = isPinchUpdateActive(item);
+                  const expired = Boolean(item.expiryDate && item.expiryDate < getLocalTodayIso());
+
+                  return (
+                    <div
+                      key={item.id}
+                      className={`bg-white rounded-2xl p-4 border shadow-xs space-y-2 ${
+                        active ? 'border-teal-200' : 'border-slate-200 opacity-85'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 text-[11px] font-bold">
+                            <span className="text-teal-700">{item.category}</span>
+                            <span aria-hidden="true">·</span>
+                            <span
+                              className={
+                                active
+                                  ? 'text-emerald-700'
+                                  : expired
+                                  ? 'text-rose-600'
+                                  : 'text-amber-700'
+                              }
+                            >
+                              {active ? 'Live' : expired ? 'Expired' : 'Draft'}
+                            </span>
+                          </div>
+                          <h4 className="font-extrabold text-sm text-slate-900 mt-0.5">
+                            {item.title}
+                          </h4>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleTogglePinchPublish(item)}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer ${
+                              item.published
+                                ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                                : 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                            }`}
+                          >
+                            {item.published ? 'Published' : 'Publish'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditPinch(item)}
+                            className="p-1.5 rounded-lg text-slate-600 hover:text-teal-700 hover:bg-slate-100 cursor-pointer"
+                            title="Edit Update"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeletePinch(item.id)}
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                            title="Delete Update"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-slate-600 leading-relaxed">{item.description}</p>
+
+                      <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
+                        <span>
+                          {item.date} {item.timing ? `· ${item.timing}` : ''}
+                        </span>
+                        <span>Expires: {item.expiryDate || 'None'}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -2461,10 +2908,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="font-extrabold text-base text-slate-900">
-                  Special Offers & Home Ribbon
+                  Special Offers & Packages
                 </h3>
                 <p className="text-xs text-slate-500">
-                  The first offer appears directly in the Home page top ribbon.
+                  Syncs live to customer phones on the Special Offers page.
                 </p>
               </div>
               <button
@@ -2478,7 +2925,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
             </div>
 
             <div className="space-y-3">
-              {specialOffers.map((offer, idx) => (
+              {specialOffers.map((offer) => (
                 <div
                   key={offer.id}
                   className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-2"
@@ -2488,11 +2935,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                       <span className="text-[10px] font-black bg-teal-100 text-teal-800 px-2 py-0.5 rounded-md">
                         {offer.discountText}
                       </span>
-                      {idx === 0 && (
-                        <span className="text-[10px] font-black bg-rose-100 text-rose-800 px-2 py-0.5 rounded-md">
-                          ★ Home Ribbon Active
-                        </span>
-                      )}
                     </div>
                     <div className="flex items-center gap-1">
                       <button
@@ -4533,7 +4975,133 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
           </div>
         </div>
       )}
+
+      {/* ================================================================== */}
+      {/* MODAL: PINCH UPDATE ADD / EDIT                                     */}
+      {/* ================================================================== */}
+      {pinchModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <h3 className="font-black text-base text-slate-900">
+                {editingPinch ? 'Edit PINCH Update' : 'Add PINCH Update'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setPinchModalOpen(false)}
+                className="p-1 rounded-lg hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-5 h-5 text-slate-500" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSavePinch} className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
+                <select
+                  value={pinchForm.category}
+                  onChange={(e) =>
+                    setPinchForm({ ...pinchForm, category: e.target.value as PinchCategory })
+                  }
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold bg-white focus:outline-teal-600"
+                >
+                  <option value="Doctor visits">Doctor visits</option>
+                  <option value="Schedule changes">Schedule changes</option>
+                  <option value="Pharmacy timings">Pharmacy timings</option>
+                  <option value="Health camps">Health camps</option>
+                  <option value="General announcements">General announcements</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Title</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Free Sugar & BP Checkup Camp"
+                  value={pinchForm.title}
+                  onChange={(e) => setPinchForm({ ...pinchForm, title: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-teal-600"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Event Date</label>
+                  <input
+                    type="date"
+                    required
+                    value={pinchForm.date}
+                    onChange={(e) => setPinchForm({ ...pinchForm, date: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-teal-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Expiry Date</label>
+                  <input
+                    type="date"
+                    required
+                    value={pinchForm.expiryDate}
+                    onChange={(e) => setPinchForm({ ...pinchForm, expiryDate: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-teal-600"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Timing</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 09:00 AM - 01:00 PM"
+                  value={pinchForm.timing}
+                  onChange={(e) => setPinchForm({ ...pinchForm, timing: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-teal-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Description</label>
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="Details customers will see when asking PINCH..."
+                  value={pinchForm.description}
+                  onChange={(e) => setPinchForm({ ...pinchForm, description: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:outline-teal-600"
+                />
+              </div>
+
+              <label className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={pinchForm.published}
+                  onChange={(e) => setPinchForm({ ...pinchForm, published: e.target.checked })}
+                />
+                <span>Publish immediately to customer app</span>
+              </label>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPinchModalOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingPinch}
+                  className="px-4 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 disabled:opacity-60 text-white text-xs font-extrabold shadow-xs cursor-pointer"
+                >
+                  {isSavingPinch ? 'Saving...' : 'Save PINCH Update'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
 

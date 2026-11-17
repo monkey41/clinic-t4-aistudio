@@ -32,7 +32,25 @@ import {
   ClinicNotification,
   StoreOrder,
   CashTransaction,
+  SpecialOffer,
+  PinchUpdate,
 } from '../types';
+
+// Lightweight session operation counter for the Admin Usage Dashboard
+let sessionFirestoreReads = 0;
+let sessionFirestoreWrites = 0;
+
+export function recordFirestoreRead(count = 1): void {
+  sessionFirestoreReads += count;
+}
+
+export function recordFirestoreWrite(count = 1): void {
+  sessionFirestoreWrites += count;
+}
+
+export function getSessionFirestoreStats() {
+  return { reads: sessionFirestoreReads, writes: sessionFirestoreWrites };
+}
 
 // Load Firebase configuration from Vite environment variables (VITE_FIREBASE_*)
 // Default fallback values configured from user's Firebase project
@@ -761,7 +779,10 @@ export async function fetchProductsFromFirestore(): Promise<Product[] | null> {
       'clinic_doctors_feed',
       'clinic_orders_feed',
       'clinic_ledger_feed',
+      'clinic_offers_feed',
+      'clinic_pinch_feed',
     ]);
+    recordFirestoreRead(snapshot.size || 1);
     snapshot.forEach((d) => {
       // Exclude feed documents
       if (!feedDocIds.has(d.id)) {
@@ -1290,6 +1311,7 @@ export async function fetchTransactionsFromFirestore(): Promise<CashTransaction[
   if (!db) return null;
   try {
     const snap = await getDoc(doc(db, 'products', 'clinic_ledger_feed'));
+    recordFirestoreRead(1);
     if (snap.exists() && Array.isArray(snap.data()?.items)) {
       return snap.data().items as CashTransaction[];
     }
@@ -1298,4 +1320,165 @@ export async function fetchTransactionsFromFirestore(): Promise<CashTransaction[
   }
   return null;
 }
+
+/**
+ * =========================================================================
+ * SPECIAL OFFERS SYNC (Ensures Admin offers reflect live on Customer phones)
+ * =========================================================================
+ */
+export async function syncOffersToFirestore(offers: SpecialOffer[]): Promise<boolean> {
+  const db = getFirebaseDb();
+  if (!db) return false;
+
+  try {
+    const feedRef = doc(db, 'products', 'clinic_offers_feed');
+    await setDoc(feedRef, {
+      items: offers,
+      updatedAt: new Date().toISOString(),
+    });
+    recordFirestoreWrite(1);
+    return true;
+  } catch (err) {
+    console.warn('Could not sync offers feed to Firestore:', err);
+    return false;
+  }
+}
+
+export async function fetchOffersFromFirestore(): Promise<SpecialOffer[] | null> {
+  const db = getFirebaseDb();
+  if (!db) return null;
+
+  try {
+    const feedSnap = await getDoc(doc(db, 'products', 'clinic_offers_feed'));
+    recordFirestoreRead(1);
+    if (feedSnap.exists() && Array.isArray(feedSnap.data()?.items)) {
+      return feedSnap.data().items as SpecialOffer[];
+    }
+  } catch (err) {
+    console.warn('Could not fetch offers feed from Firestore:', err);
+  }
+
+  try {
+    const colSnap = await getDocs(collection(db, 'special_offers'));
+    recordFirestoreRead(colSnap.size || 1);
+    if (!colSnap.empty) {
+      const list: SpecialOffer[] = [];
+      colSnap.forEach((d) => list.push(d.data() as SpecialOffer));
+      return list;
+    }
+  } catch {
+    // ignore
+  }
+
+  return null;
+}
+
+export function subscribeToOffers(callback: (offers: SpecialOffer[]) => void): () => void {
+  const db = getFirebaseDb();
+  if (!db) return () => {};
+
+  try {
+    const feedRef = doc(db, 'products', 'clinic_offers_feed');
+    return onSnapshot(
+      feedRef,
+      (snap) => {
+        recordFirestoreRead(1);
+        if (snap.exists() && Array.isArray(snap.data()?.items)) {
+          callback(snap.data().items as SpecialOffer[]);
+        }
+      },
+      () => {}
+    );
+  } catch {
+    return () => {};
+  }
+}
+
+/**
+ * =========================================================================
+ * PINCH ASSISTANT UPDATES SYNC (Admin-published clinic updates)
+ * =========================================================================
+ */
+export async function syncPinchUpdatesToFirestore(updates: PinchUpdate[]): Promise<boolean> {
+  const db = getFirebaseDb();
+  if (!db) return false;
+
+  try {
+    const feedRef = doc(db, 'products', 'clinic_pinch_feed');
+    await setDoc(feedRef, {
+      items: updates,
+      updatedAt: new Date().toISOString(),
+    });
+    recordFirestoreWrite(1);
+    return true;
+  } catch (err) {
+    console.warn('Could not sync PINCH updates to Firestore:', err);
+    return false;
+  }
+}
+
+export async function deletePinchUpdateFromFirestore(
+  updateId: string,
+  remainingUpdates: PinchUpdate[]
+): Promise<boolean> {
+  const db = getFirebaseDb();
+  if (!db) return false;
+
+  try {
+    const feedRef = doc(db, 'products', 'clinic_pinch_feed');
+    await setDoc(feedRef, {
+      items: remainingUpdates,
+      updatedAt: new Date().toISOString(),
+    });
+    recordFirestoreWrite(1);
+  } catch (err) {
+    console.warn('Could not update PINCH feed on delete:', err);
+  }
+
+  try {
+    await deleteDoc(doc(db, 'pinch_updates', updateId));
+  } catch {
+    // ignore
+  }
+  return true;
+}
+
+export async function fetchPinchUpdatesFromFirestore(): Promise<PinchUpdate[] | null> {
+  const db = getFirebaseDb();
+  if (!db) return null;
+
+  try {
+    const snap = await getDoc(doc(db, 'products', 'clinic_pinch_feed'));
+    recordFirestoreRead(1);
+    if (snap.exists() && Array.isArray(snap.data()?.items)) {
+      return snap.data().items as PinchUpdate[];
+    }
+  } catch (err) {
+    console.warn('Could not fetch PINCH updates:', err);
+  }
+
+  return null;
+}
+
+export function subscribeToPinchUpdates(callback: (updates: PinchUpdate[]) => void): () => void {
+  const db = getFirebaseDb();
+  if (!db) return () => {};
+
+  try {
+    const feedRef = doc(db, 'products', 'clinic_pinch_feed');
+    return onSnapshot(
+      feedRef,
+      (snap) => {
+        recordFirestoreRead(1);
+        if (snap.exists() && Array.isArray(snap.data()?.items)) {
+          callback(snap.data().items as PinchUpdate[]);
+        }
+      },
+      () => {}
+    );
+  } catch {
+    return () => {};
+  }
+}
+
 

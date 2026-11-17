@@ -1,5 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { SpecialOffer, Doctor, Product, ClinicConfig, ClinicNotification } from './types';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  SpecialOffer,
+  Doctor,
+  Product,
+  ClinicConfig,
+  ClinicNotification,
+  PinchUpdate,
+} from './types';
 import { Header } from './components/Header';
 import { DoctorSwipe } from './components/DoctorSwipe';
 import { ClinicMap } from './components/ClinicMap';
@@ -9,28 +16,28 @@ import { SpecialOfferPage } from './components/SpecialOfferPage';
 import { BottomNav } from './components/BottomNav';
 import { AdminPortal } from './components/AdminPortal';
 import { DoctorDirectory } from './components/DoctorDirectory';
+import { PinchAssistant } from './components/PinchAssistant';
 import {
   getDoctors,
   saveDoctors,
   getProducts,
   getSpecialOffers,
+  saveSpecialOffers,
   saveUnannouncedArrivals,
   getClinicNotifications,
   saveClinicNotifications,
   getClinicConfig,
+  getPinchUpdates,
+  savePinchUpdates,
   addBookingHistoryItem,
   TRANSLATIONS,
-  DEFAULT_SPECIAL_OFFERS,
 } from './data/clinicData';
 import {
   Stethoscope,
   FlaskConical,
-  CalendarCheck,
   Sparkles,
-  ArrowRight,
   ExternalLink,
   Pill,
-  ChevronRight,
   BellRing,
   X,
   ShieldCheck,
@@ -44,13 +51,12 @@ import {
   fetchArrivalsFromFirestore,
   fetchDoctorsFromFirestore,
   subscribeToDoctors,
+  fetchOffersFromFirestore,
+  subscribeToOffers,
+  fetchPinchUpdatesFromFirestore,
+  subscribeToPinchUpdates,
 } from './services/firebase';
-import {
-  isNotificationSupported,
-  getNotificationPermission,
-  requestMobileNotificationPermission,
-  dispatchMobileNotification,
-} from './services/notifications';
+import { dispatchMobileNotification } from './services/notifications';
 
 const resolveCurrentTab = (): 'home' | 'doctors' | 'store' | 'appointments' | 'offers' | 'admin' => {
   if (typeof window === 'undefined') return 'home';
@@ -93,19 +99,8 @@ export default function App() {
   const [notifications, setNotifications] = useState<ClinicNotification[]>(() =>
     getClinicNotifications()
   );
+  const [pinchUpdates, setPinchUpdates] = useState<PinchUpdate[]>(() => getPinchUpdates());
   const [clinicConfig, setClinicConfig] = useState<ClinicConfig>(() => getClinicConfig());
-
-  // Customer mobile notification permission & live in-app banner state
-  const [notifPerm, setNotifPerm] = useState<NotificationPermission | 'unsupported'>(() =>
-    getNotificationPermission()
-  );
-  const [alertPromptDismissed, setAlertPromptDismissed] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('lifecare_alert_prompt_dismissed') === 'true';
-    } catch {
-      return false;
-    }
-  });
   const [liveAlertToast, setLiveAlertToast] = useState<ClinicNotification | null>(null);
 
   const knownNotifIdsRef = useRef<Set<string>>(
@@ -145,51 +140,76 @@ export default function App() {
       setProducts(getProducts());
       setSpecialOffers(getSpecialOffers());
       setNotifications(getClinicNotifications());
+      setPinchUpdates(getPinchUpdates());
       setClinicConfig(getClinicConfig());
     };
     window.addEventListener('clinic-data-updated', syncData);
     return () => window.removeEventListener('clinic-data-updated', syncData);
   }, []);
 
+  const refreshCloudData = useCallback(async () => {
+    await Promise.all([
+      fetchProductsFromFirestore()
+        .then((cloudProducts) => {
+          if (cloudProducts && cloudProducts.length > 0) {
+            setProducts(cloudProducts);
+          }
+        })
+        .catch(() => {}),
+
+      fetchDoctorsFromFirestore()
+        .then((cloudDoctors) => {
+          if (cloudDoctors && cloudDoctors.length > 0) {
+            setDoctors(cloudDoctors);
+            saveDoctors(cloudDoctors);
+          }
+        })
+        .catch(() => {}),
+
+      fetchOffersFromFirestore()
+        .then((cloudOffers) => {
+          if (cloudOffers && Array.isArray(cloudOffers)) {
+            setSpecialOffers(cloudOffers);
+            saveSpecialOffers(cloudOffers);
+          }
+        })
+        .catch(() => {}),
+
+      fetchPinchUpdatesFromFirestore()
+        .then((cloudPinch) => {
+          if (cloudPinch && Array.isArray(cloudPinch)) {
+            setPinchUpdates(cloudPinch);
+            savePinchUpdates(cloudPinch);
+          }
+        })
+        .catch(() => {}),
+
+      fetchNotificationsFromFirestore()
+        .then((cloudNotifs) => {
+          if (cloudNotifs && Array.isArray(cloudNotifs) && cloudNotifs.length > 0) {
+            setNotifications(cloudNotifs);
+            saveClinicNotifications(cloudNotifs);
+            markNotifSeen(cloudNotifs.map((n) => n.id));
+          }
+          initialNotifSyncDoneRef.current = true;
+        })
+        .catch(() => {
+          initialNotifSyncDoneRef.current = true;
+        }),
+
+      fetchArrivalsFromFirestore()
+        .then((cloudArrivals) => {
+          if (cloudArrivals && Array.isArray(cloudArrivals) && cloudArrivals.length > 0) {
+            saveUnannouncedArrivals(cloudArrivals);
+          }
+        })
+        .catch(() => {}),
+    ]);
+  }, []);
+
   // Real-time Firestore sync across all customer phones
   useEffect(() => {
-    fetchProductsFromFirestore()
-      .then((cloudProducts) => {
-        if (cloudProducts && cloudProducts.length > 0) {
-          setProducts(cloudProducts);
-        }
-      })
-      .catch(() => {});
-
-    fetchDoctorsFromFirestore()
-      .then((cloudDoctors) => {
-        if (cloudDoctors && cloudDoctors.length > 0) {
-          setDoctors(cloudDoctors);
-          saveDoctors(cloudDoctors);
-        }
-      })
-      .catch(() => {});
-
-    fetchNotificationsFromFirestore()
-      .then((cloudNotifs) => {
-        if (cloudNotifs && Array.isArray(cloudNotifs) && cloudNotifs.length > 0) {
-          setNotifications(cloudNotifs);
-          saveClinicNotifications(cloudNotifs);
-          markNotifSeen(cloudNotifs.map((n) => n.id));
-        }
-        initialNotifSyncDoneRef.current = true;
-      })
-      .catch(() => {
-        initialNotifSyncDoneRef.current = true;
-      });
-
-    fetchArrivalsFromFirestore()
-      .then((cloudArrivals) => {
-        if (cloudArrivals && Array.isArray(cloudArrivals) && cloudArrivals.length > 0) {
-          saveUnannouncedArrivals(cloudArrivals);
-        }
-      })
-      .catch(() => {});
+    refreshCloudData();
 
     const unsubNotifs = subscribeToClinicNotifications((liveNotifs) => {
       if (!Array.isArray(liveNotifs)) return;
@@ -230,12 +250,28 @@ export default function App() {
       }
     });
 
+    const unsubOffers = subscribeToOffers((liveOffers) => {
+      if (Array.isArray(liveOffers)) {
+        setSpecialOffers(liveOffers);
+        saveSpecialOffers(liveOffers);
+      }
+    });
+
+    const unsubPinch = subscribeToPinchUpdates((livePinch) => {
+      if (Array.isArray(livePinch)) {
+        setPinchUpdates(livePinch);
+        savePinchUpdates(livePinch);
+      }
+    });
+
     return () => {
       unsubNotifs();
       unsubArrivals();
       unsubDoctors();
+      unsubOffers();
+      unsubPinch();
     };
-  }, []);
+  }, [refreshCloudData]);
 
   // Handle URL history and browser back/forward/refresh buttons
   useEffect(() => {
@@ -293,13 +329,7 @@ export default function App() {
     }
   };
 
-  const handleEnablePhoneAlerts = async () => {
-    const res = await requestMobileNotificationPermission();
-    setNotifPerm(res);
-  };
-
   const t = TRANSLATIONS.en;
-  const topOffer = specialOffers[0] || DEFAULT_SPECIAL_OFFERS[0];
   const doctorBookingUrl = clinicConfig.doctorBookingUrl;
   const pathologyBookingUrl = clinicConfig.pathologyBookingUrl;
 
@@ -363,7 +393,7 @@ export default function App() {
             onTabChange={handleTabChange}
             activeTab={displayedCustomerTab}
             notifications={notifications}
-            onNotificationPermissionChange={(perm) => setNotifPerm(perm)}
+            onRefreshCloudData={refreshCloudData}
           />
         )}
 
@@ -383,187 +413,12 @@ export default function App() {
             </div>
           )}
 
-          {/* 2. HOME TAB */}
+          {/* 2. HOME TAB (Clean 2x2 Quick Services, Smooth Doctor Swipe & Map — no duplicate buttons or top ribbons) */}
           {(activeTab !== 'admin' || isAdminPreview) && displayedCustomerTab === 'home' && (
-            <div className="space-y-4 pt-2 pb-20">
-              {/* Mobile Notification Opt-In Strip (1-tap permission for phones) */}
-              {isNotificationSupported() && notifPerm === 'default' && !alertPromptDismissed && (
-                <div className="px-4">
-                  <div className="px-3.5 py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex items-center justify-between gap-2 shadow-sm">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <BellRing className="w-4 h-4 text-amber-300 shrink-0" />
-                      <span className="text-xs font-bold truncate">
-                        Get doctor & clinic alerts on your phone
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        type="button"
-                        onClick={handleEnablePhoneAlerts}
-                        className="px-2.5 py-1 rounded-lg bg-white text-indigo-900 text-[11px] font-black cursor-pointer hover:bg-indigo-50"
-                      >
-                        Allow
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAlertPromptDismissed(true);
-                          try {
-                            localStorage.setItem('lifecare_alert_prompt_dismissed', 'true');
-                          } catch {
-                            // ignore
-                          }
-                        }}
-                        className="p-1 rounded-lg hover:bg-white/20 text-white/80 cursor-pointer"
-                        aria-label="Dismiss"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Vibrant Special Offer Banner */}
-              {topOffer && (
-                <div className="px-4">
-                  <button
-                    type="button"
-                    onClick={() => handleTabChange('offers')}
-                    className="w-full py-2.5 px-3.5 rounded-2xl shadow-sm bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-slate-950 flex items-center justify-between gap-2 text-left transition-all active:scale-98 cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="shrink-0 text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-950 text-amber-300 flex items-center gap-1 shadow-xs">
-                        <Sparkles className="w-2.5 h-2.5 text-amber-300" />
-                        {topOffer.discountText}
-                      </span>
-                      <span className="text-xs font-black truncate text-slate-950">
-                        {topOffer.title}
-                      </span>
-                    </div>
-
-                    <span className="shrink-0 text-xs font-black flex items-center gap-0.5 text-slate-950">
-                      <span>View</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </span>
-                  </button>
-                </div>
-              )}
-
-              {/* Colorful Compact Hero Card */}
+            <div className="space-y-4 pt-3 pb-24">
+              {/* 4 Distinct Colorful Service Cards */}
               <section className="px-4">
-                <div className="bg-gradient-to-br from-teal-700 via-emerald-700 to-cyan-800 text-white rounded-3xl p-4 shadow-md relative overflow-hidden">
-                  <div className="absolute -top-8 -right-8 w-28 h-28 rounded-full bg-white/15 blur-xl pointer-events-none" />
-                  <div className="relative z-10 space-y-1">
-                    <div className="flex items-center justify-between text-[11px] font-bold">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/20 text-white">
-                        <span className="w-2 h-2 rounded-full bg-emerald-300 animate-pulse" />
-                        Open Daily • 8 AM – 10 PM
-                      </span>
-                      <span className="text-emerald-200">Baripada</span>
-                    </div>
-                    <h1 className="text-lg sm:text-xl font-black tracking-tight leading-snug">
-                      Life Care Pharmacy & Poly Clinic
-                    </h1>
-                  </div>
-                </div>
-              </section>
-
-              {/* 5 Quick-Launch Colorful Category Icons */}
-              <section className="px-4">
-                <div className="grid grid-cols-5 gap-2 text-center">
-                  <button
-                    type="button"
-                    onClick={() => handleTabChange('doctors')}
-                    className="flex flex-col items-center gap-1 p-2 rounded-2xl bg-purple-50 hover:bg-purple-100 border border-purple-200/80 transition-all active:scale-95 cursor-pointer"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shadow-xs">
-                      <Stethoscope className="w-5 h-5" />
-                    </div>
-                    <span className="text-[11px] font-black text-purple-900 leading-none">
-                      Doctors
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAppointmentsSubTab('pathology');
-                      if (isAdminPreview) {
-                        setPreviewTab('appointments');
-                      } else {
-                        setActiveTab('appointments');
-                      }
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }}
-                    className="flex flex-col items-center gap-1 p-2 rounded-2xl bg-rose-50 hover:bg-rose-100 border border-rose-200/80 transition-all active:scale-95 cursor-pointer"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center shadow-xs">
-                      <FlaskConical className="w-5 h-5" />
-                    </div>
-                    <span className="text-[11px] font-black text-rose-900 leading-none">
-                      Lab Tests
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleTabChange('store')}
-                    className="flex flex-col items-center gap-1 p-2 rounded-2xl bg-blue-50 hover:bg-blue-100 border border-blue-200/80 transition-all active:scale-95 cursor-pointer"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs">
-                      <Pill className="w-5 h-5" />
-                    </div>
-                    <span className="text-[11px] font-black text-blue-900 leading-none">
-                      Pharmacy
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleTabChange('appointments')}
-                    className="flex flex-col items-center gap-1 p-2 rounded-2xl bg-teal-50 hover:bg-teal-100 border border-teal-200/80 transition-all active:scale-95 cursor-pointer"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-teal-700 text-white flex items-center justify-center shadow-xs">
-                      <CalendarCheck className="w-5 h-5" />
-                    </div>
-                    <span className="text-[11px] font-black text-teal-900 leading-none">
-                      OPD Dates
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleTabChange('offers')}
-                    className="flex flex-col items-center gap-1 p-2 rounded-2xl bg-amber-50 hover:bg-amber-100 border border-amber-200/80 transition-all active:scale-95 cursor-pointer"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center shadow-xs">
-                      <Sparkles className="w-5 h-5" />
-                    </div>
-                    <span className="text-[11px] font-black text-amber-900 leading-none">
-                      Offers
-                    </span>
-                  </button>
-                </div>
-              </section>
-
-              {/* 3 Colorful Primary Action Tiles */}
-              <section className="px-4 space-y-2.5">
-                <div className="p-4 rounded-3xl bg-gradient-to-r from-teal-700 via-teal-800 to-emerald-800 text-white shadow-md flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-11 h-11 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
-                      <Stethoscope className="w-6 h-6 text-white" />
-                    </div>
-                    <div className="min-w-0">
-                      <h2 className="font-black text-sm sm:text-base leading-tight">
-                        Book Doctor OPD
-                      </h2>
-                      <p className="text-xs text-teal-100 font-medium truncate">
-                        {doctors.length} Specialists
-                      </p>
-                    </div>
-                  </div>
-
+                <div className="grid grid-cols-2 gap-2.5">
                   <a
                     href={doctorBookingUrl}
                     target="_blank"
@@ -576,94 +431,86 @@ export default function App() {
                         url: doctorBookingUrl,
                       })
                     }
-                    className="shrink-0 font-black text-xs py-2 px-3.5 rounded-xl bg-white text-teal-900 hover:bg-teal-50 shadow-xs flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
+                    className="p-3.5 rounded-2xl bg-gradient-to-br from-teal-600 to-emerald-700 text-white shadow-sm flex items-center gap-2.5 transition-transform active:scale-98 cursor-pointer"
                   >
-                    <span>Book</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-
-                <div className="p-4 rounded-3xl bg-gradient-to-r from-rose-600 via-rose-700 to-pink-700 text-white shadow-md flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-11 h-11 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
-                      <FlaskConical className="w-6 h-6 text-white" />
+                    <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                      <Stethoscope className="w-5 h-5" />
                     </div>
-                    <div className="min-w-0">
-                      <h2 className="font-black text-sm sm:text-base leading-tight">
-                        Pathology Lab Tests
-                      </h2>
-                      <p className="text-xs text-rose-100 font-medium truncate">
-                        Blood, Thyroid & Profiles
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1">
+                        <span className="font-black text-xs leading-tight">Book OPD</span>
+                        <ExternalLink className="w-3 h-3 opacity-80 shrink-0" />
+                      </div>
+                      <p className="text-[10px] text-teal-100 truncate mt-0.5">
+                        {doctors.length} Specialists
                       </p>
                     </div>
-                  </div>
-
-                  <a
-                    href={pathologyBookingUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={() =>
-                      addBookingHistoryItem({
-                        type: 'pathology',
-                        title: 'Pathology Lab Online Booking',
-                        subtitle: 'Home Lab Booking',
-                        url: pathologyBookingUrl,
-                      })
-                    }
-                    className="shrink-0 font-black text-xs py-2 px-3.5 rounded-xl bg-white text-rose-900 hover:bg-rose-50 shadow-xs flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
-                  >
-                    <span>Book</span>
-                    <ExternalLink className="w-3 h-3" />
                   </a>
-                </div>
 
-                <div className="p-4 rounded-3xl bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 text-white shadow-md flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-11 h-11 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
-                      <Pill className="w-6 h-6 text-white" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAppointmentsSubTab('pathology');
+                      if (isAdminPreview) {
+                        setPreviewTab('appointments');
+                      } else {
+                        setActiveTab('appointments');
+                      }
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className="p-3.5 rounded-2xl bg-gradient-to-br from-rose-600 to-pink-600 text-white shadow-sm flex items-center gap-2.5 text-left transition-transform active:scale-98 cursor-pointer"
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                      <FlaskConical className="w-5 h-5" />
                     </div>
-                    <div className="min-w-0">
-                      <h2 className="font-black text-sm sm:text-base leading-tight">
-                        Order Medicines
-                      </h2>
-                      <p className="text-xs text-blue-100 font-medium truncate">
-                        Medicines & Physio Supplies
+                    <div className="min-w-0 flex-1">
+                      <span className="font-black text-xs leading-tight block">Lab Tests</span>
+                      <p className="text-[10px] text-rose-100 truncate mt-0.5">
+                        Pathology & Rates
                       </p>
                     </div>
-                  </div>
+                  </button>
 
                   <button
                     type="button"
                     onClick={() => handleTabChange('store')}
-                    className="shrink-0 font-black text-xs py-2 px-3.5 rounded-xl bg-white text-blue-900 hover:bg-blue-50 shadow-xs flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
+                    className="p-3.5 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow-sm flex items-center gap-2.5 text-left transition-transform active:scale-98 cursor-pointer"
                   >
-                    <span>Store</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
+                    <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                      <Pill className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <span className="font-black text-xs leading-tight block">Pharmacy</span>
+                      <p className="text-[10px] text-blue-100 truncate mt-0.5">
+                        Meds & Physio
+                      </p>
+                    </div>
                   </button>
-                </div>
-              </section>
 
-              {/* Specialists Swipe Carousel */}
-              <section className="space-y-1">
-                <DoctorSwipe doctors={doctors} t={t} />
-
-                <div className="px-4">
                   <button
                     type="button"
-                    onClick={() => handleTabChange('doctors')}
-                    className="w-full py-2.5 px-4 rounded-2xl border border-purple-200 bg-purple-50/70 hover:bg-purple-100 text-purple-900 font-extrabold text-xs flex items-center justify-between transition-colors cursor-pointer"
+                    onClick={() => handleTabChange('offers')}
+                    className="p-3.5 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-slate-950 shadow-sm flex items-center gap-2.5 text-left transition-transform active:scale-98 cursor-pointer"
                   >
-                    <span className="flex items-center gap-1.5">
-                      <span>👨‍⚕️</span>
-                      <span>All Specialist Doctors</span>
-                    </span>
-                    <span className="flex items-center gap-0.5 text-purple-700 font-black">
-                      <span>View All</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </span>
+                    <div className="w-10 h-10 rounded-xl bg-slate-950/15 flex items-center justify-center shrink-0">
+                      <Sparkles className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <span className="font-black text-xs leading-tight block">Offers</span>
+                      <p className="text-[10px] text-slate-900/80 font-bold truncate mt-0.5">
+                        {specialOffers.length} Active Packages
+                      </p>
+                    </div>
                   </button>
                 </div>
               </section>
+
+              {/* Smooth Doctor Swipe Carousel */}
+              <DoctorSwipe
+                doctors={doctors}
+                t={t}
+                onViewAll={() => handleTabChange('doctors')}
+              />
 
               {/* Clinic Location & Map */}
               <section className="pt-1">
@@ -694,6 +541,11 @@ export default function App() {
             <SpecialOfferPage offers={specialOffers} onBack={() => handleTabChange('home')} />
           )}
         </main>
+
+        {/* Floating PINCH Updates Assistant (Customer App & Admin Preview) */}
+        {(activeTab !== 'admin' || isAdminPreview) && (
+          <PinchAssistant updates={pinchUpdates} />
+        )}
 
         {/* Bottom Navigation Bar */}
         {(activeTab !== 'admin' || isAdminPreview) && (

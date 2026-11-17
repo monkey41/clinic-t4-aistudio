@@ -135,3 +135,24 @@ export interface CashTransaction {
   createdAt: string;
 }
 
+export type PinchCategory =
+  | 'Doctor visits'
+  | 'Schedule changes'
+  | 'Pharmacy timings'
+  | 'Health camps'
+  | 'General announcements';
+
+export interface PinchUpdate {
+  id: string;
+  title: string;
+  category: PinchCategory;
+  date: string; // YYYY-MM-DD
+  timing: string;
+  description: string;
+  expiryDate: string; // YYYY-MM-DD
+  published: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+
