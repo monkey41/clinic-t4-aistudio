@@ -55,21 +55,16 @@ export const SpecialOfferPage: React.FC<SpecialOfferPageProps> = ({
         </button>
       </div>
 
-      {/* Hero Offer Header */}
-      <div className={`rounded-3xl p-5 shadow-lg relative overflow-hidden border ${p.cardAlt}`}>
-        <div className="relative z-10 space-y-2">
-          <div
-            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold tracking-wide uppercase ${p.badge}`}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Life Care Medicine Store and Poly Clinic</span>
+      {/* Colorful Hero Offer Header */}
+      <div className="rounded-3xl p-5 shadow-md relative overflow-hidden bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 text-white">
+        <div className="relative z-10 space-y-1.5">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wide uppercase bg-white/20 text-white">
+            <Sparkles className="w-3 h-3" />
+            <span>Special Offers</span>
           </div>
-          <h1 className={`text-2xl font-extrabold tracking-tight leading-tight ${p.heading}`}>
-            Special Health, OPD & Pathology Offers
+          <h1 className="text-xl font-black tracking-tight leading-tight">
+            Health & Lab Packages
           </h1>
-          <p className={`text-xs font-medium leading-relaxed ${p.subtext}`}>
-            Use the direct booking buttons below to book on our official portal.
-          </p>
         </div>
       </div>
 

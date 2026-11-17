@@ -1,51 +1,45 @@
 import React, { useState, useEffect } from 'react';
-import { Language, DoctorArrival, SpecialOffer, ClinicNotification } from '../types';
+import { ClinicNotification } from '../types';
 import {
   Phone,
   Menu,
   X,
   Bell,
+  BellRing,
   ArrowRight,
-  Sparkles,
-  ExternalLink,
-  ShieldAlert,
-  Lock,
   Download,
-  Smartphone,
-  CheckCircle2,
   Megaphone,
-  Info,
-  AlertTriangle,
 } from 'lucide-react';
 import {
   CLINIC_CONFIG,
-  DEFAULT_SPECIAL_OFFERS,
-  DOCTOR_BOOKING_URL,
   getThemePalette,
-  addBookingHistoryItem,
 } from '../data/clinicData';
+import {
+  isNotificationSupported,
+  getNotificationPermission,
+  requestMobileNotificationPermission,
+} from '../services/notifications';
 
 interface HeaderProps {
-  currentLang?: Language;
-  onSelectLang?: (lang: Language) => void;
   brandName: string;
   onTabChange: (tab: 'home' | 'doctors' | 'store' | 'appointments' | 'offers' | 'admin') => void;
   activeTab: string;
-  specialOffers?: SpecialOffer[];
-  unannouncedArrivals?: DoctorArrival[];
   notifications?: ClinicNotification[];
+  onNotificationPermissionChange?: (perm: NotificationPermission | 'unsupported') => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   brandName,
   onTabChange,
   activeTab,
-  specialOffers = DEFAULT_SPECIAL_OFFERS,
-  unannouncedArrivals = [],
   notifications = [],
+  onNotificationPermissionChange,
 }) => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [notifPerm, setNotifPerm] = useState<NotificationPermission | 'unsupported'>(() =>
+    getNotificationPermission()
+  );
 
   const notifRef = React.useRef<HTMLDivElement>(null);
 
@@ -119,18 +113,21 @@ export const Header: React.FC<HeaderProps> = ({
     }
   };
 
-  const topOffers = specialOffers.slice(0, 2);
   const activeNotifications = React.useMemo(() => {
     return notifications.filter((n) => n.active !== false);
   }, [notifications]);
 
   const currentNotifKeys = React.useMemo(() => {
-    const keys: string[] = [];
-    activeNotifications.forEach((n) => keys.push(`notif-${n.id}-${n.createdAt || ''}`));
-    unannouncedArrivals.forEach((a) => keys.push(`arr-${a.id}-${a.sentByAdminAt || ''}`));
-    topOffers.forEach((o) => keys.push(`off-${o.id}`));
-    return keys;
-  }, [activeNotifications, unannouncedArrivals, topOffers]);
+    return activeNotifications.map((n) => `notif-${n.id}-${n.createdAt || ''}`);
+  }, [activeNotifications]);
+
+  const handleEnablePhoneAlerts = async () => {
+    const res = await requestMobileNotificationPermission();
+    setNotifPerm(res);
+    if (onNotificationPermissionChange) {
+      onNotificationPermissionChange(res);
+    }
+  };
 
   // Read notifications from localStorage
   const [readNotifKeys, setReadNotifKeys] = useState<string[]>(() => {
@@ -231,24 +228,22 @@ export const Header: React.FC<HeaderProps> = ({
               target="_blank"
               rel="noopener noreferrer"
               aria-label="Chat on WhatsApp"
-              className="flex items-center gap-1 text-xs font-bold px-2 py-1.5 rounded-lg transition-colors border bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100"
+              className="flex items-center gap-1.5 text-xs font-black px-3 py-1.5 rounded-xl transition-all shadow-xs bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95 cursor-pointer"
               title="Chat with Clinic on WhatsApp"
             >
-              <svg className="w-3.5 h-3.5 fill-[#25D366]" viewBox="0 0 24 24">
+              <svg className="w-3.5 h-3.5 fill-white" viewBox="0 0 24 24">
                 <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.888 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
               </svg>
-              <span className="hidden xs:inline">WhatsApp</span>
+              <span>WhatsApp</span>
             </a>
 
-
-
-            {/* Notification Bell: Doctors Arriving Unannounced & Special Offers */}
+            {/* Notification Bell: Clinic & Doctor Visit Notifications */}
             <div className="relative" ref={notifRef}>
               <button
                 type="button"
                 onClick={handleOpenNotifications}
                 aria-label="Notifications"
-                className="relative p-2 rounded-xl shadow-2xs transition-all active:scale-95 cursor-pointer border bg-white text-slate-700 hover:text-teal-700 border-slate-200"
+                className="relative p-2 rounded-xl shadow-xs transition-all active:scale-95 cursor-pointer border bg-slate-50 text-slate-700 hover:text-teal-700 border-slate-200"
                 title="Notifications"
               >
                 <Bell className="w-4 h-4" />
@@ -269,220 +264,110 @@ export const Header: React.FC<HeaderProps> = ({
                   <div
                     className={`absolute right-0 mt-2 w-80 sm:w-96 rounded-3xl shadow-2xl border p-4 z-50 animate-in fade-in slide-in-from-top-2 duration-150 space-y-3 ${theme.cardBg}`}
                   >
-                    <div className={`flex items-center justify-between pb-2 border-b ${theme.border}`}>
-                      <div className="flex items-center gap-1.5">
+                    <div className={`flex items-center justify-between pb-2.5 border-b ${theme.border}`}>
+                      <div className="flex items-center gap-2">
                         <span className="text-base">🔔</span>
-                        <div>
-                          <h4 className={`font-extrabold text-xs sm:text-sm ${theme.headingText}`}>
-                            Notifications
-                          </h4>
-                          <span className={`text-[10px] block ${theme.subText}`}>
-                            Special Offers & Doctors Arriving Unannounced
-                          </span>
-                        </div>
+                        <h4 className={`font-extrabold text-xs sm:text-sm ${theme.headingText}`}>
+                          Notifications
+                        </h4>
                       </div>
+
+                      {isNotificationSupported() && (
+                        notifPerm === 'granted' ? (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                            <BellRing className="w-3 h-3" />
+                            <span>Phone Alerts On</span>
+                          </span>
+                        ) : notifPerm === 'default' ? (
+                          <button
+                            type="button"
+                            onClick={handleEnablePhoneAlerts}
+                            className="text-[10px] font-extrabold px-2.5 py-1 rounded-full bg-teal-700 hover:bg-teal-800 text-white flex items-center gap-1 cursor-pointer shadow-2xs"
+                          >
+                            <BellRing className="w-3 h-3" />
+                            <span>Enable Phone Alerts</span>
+                          </button>
+                        ) : (
+                          <span className="text-[10px] font-medium text-slate-400">
+                            Alerts blocked in browser
+                          </span>
+                        )
+                      )}
                     </div>
 
-                    <div className="max-h-80 overflow-y-auto space-y-3 pr-1 scrollbar-thin">
-                      {/* 1. GENERAL CLINIC NOTICES & ANNOUNCEMENTS (BROADCASTS) */}
-                      {activeNotifications.length > 0 && (
-                        <div className="space-y-1.5">
-                          <span
-                            className={`text-[10px] font-extrabold uppercase tracking-wider block flex items-center gap-1 ${theme.accentText}`}
+                    <div className="max-h-80 overflow-y-auto space-y-2.5 pr-1 scrollbar-thin">
+                      {activeNotifications.length > 0 ? (
+                        activeNotifications.map((notif) => (
+                          <div
+                            key={notif.id}
+                            className={`p-3 rounded-2xl border text-left transition-colors relative overflow-hidden ${
+                              notif.type === 'alert' || notif.type === 'urgent'
+                                ? 'bg-rose-50/90 border-rose-200'
+                                : notif.type === 'offer'
+                                ? 'bg-amber-50/80 border-amber-200'
+                                : 'bg-teal-50/70 border-teal-200/80'
+                            }`}
                           >
-                            <Megaphone className="w-3 h-3" />
-                            <span>Clinic Announcements</span>
-                          </span>
-
-                          {activeNotifications.map((notif) => (
-                            <div
-                              key={notif.id}
-                              className={`p-3 rounded-2xl border text-left transition-colors relative overflow-hidden ${
-                                notif.type === 'alert' || notif.type === 'urgent'
-                                  ? 'bg-rose-50/90 border-rose-200'
-                                  : notif.type === 'offer'
-                                  ? 'bg-amber-50/80 border-amber-200'
-                                  : 'bg-teal-50/70 border-teal-200/80'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between gap-1 mb-1">
-                                <span
-                                  className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded ${
-                                    notif.type === 'alert' || notif.type === 'urgent'
-                                      ? 'bg-rose-600 text-white'
-                                      : notif.type === 'offer'
-                                      ? 'bg-amber-500 text-slate-950'
-                                      : 'bg-teal-700 text-white'
-                                  }`}
-                                >
-                                  {notif.badge || notif.category || 'Notice'}
-                                </span>
-                                <span className="text-[9px] font-semibold text-slate-400">
-                                  {notif.sentByAdminAt || 'Recent'}
-                                </span>
-                              </div>
-
-                              <h5 className="font-extrabold text-xs text-slate-900 leading-tight">
-                                {notif.title}
-                              </h5>
-                              <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
-                                {notif.message}
-                              </p>
-
-                              {notif.actionLabel && (
-                                <div className="mt-2 pt-1.5 border-t border-slate-200/60 flex justify-end">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setNotifOpen(false);
-                                      if (notif.actionUrl && notif.actionUrl.startsWith('http')) {
-                                        window.open(notif.actionUrl, '_blank', 'noopener,noreferrer');
-                                      } else if (
-                                        notif.actionUrl &&
-                                        ['home', 'doctors', 'store', 'appointments', 'offers'].includes(notif.actionUrl)
-                                      ) {
-                                        onTabChange(notif.actionUrl as any);
-                                      } else {
-                                        const text = (notif.title + ' ' + notif.message).toLowerCase();
-                                        if (text.includes('medicine') || text.includes('store') || text.includes('order')) {
-                                          onTabChange('store');
-                                        } else if (text.includes('doctor') || text.includes('opd') || text.includes('consult')) {
-                                          onTabChange('doctors');
-                                        } else if (text.includes('test') || text.includes('lab') || text.includes('pathology')) {
-                                          onTabChange('appointments');
-                                        } else if (text.includes('offer') || text.includes('discount')) {
-                                          onTabChange('offers');
-                                        }
-                                      }
-                                    }}
-                                    className="text-[10px] font-extrabold text-teal-800 hover:text-teal-950 flex items-center gap-1 cursor-pointer"
-                                  >
-                                    <span>{notif.actionLabel}</span>
-                                    <ArrowRight className="w-2.5 h-2.5" />
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* 2. DOCTORS ARRIVING UNANNOUNCED */}
-                      {unannouncedArrivals.length > 0 && (
-                        <div className="space-y-1.5 pt-1">
-                          <span
-                            className={`text-[10px] font-extrabold uppercase tracking-wider block ${theme.accentText}`}
-                          >
-                            👨‍⚕️ Doctors Arriving Unannounced
-                          </span>
-
-                          {unannouncedArrivals.map((arrival) => (
-                            <div
-                              key={arrival.id}
-                              className={`p-2.5 rounded-2xl border text-left transition-colors flex items-start gap-2.5 ${theme.subtleBg}`}
-                            >
-                              <img
-                                src={arrival.photo}
-                                alt={arrival.doctorName}
-                                className="w-10 h-10 rounded-xl object-cover object-top border border-slate-200 shrink-0"
-                                referrerPolicy="no-referrer"
-                              />
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between gap-1">
-                                  <span
-                                    className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded border ${theme.badge}`}
-                                  >
-                                    Unannounced Visit
-                                  </span>
-                                  <span className={`text-[9px] font-semibold ${theme.subText}`}>
-                                    {arrival.sentByAdminAt || 'Today'}
-                                  </span>
-                                </div>
-                                <h5 className={`font-extrabold text-xs truncate mt-1 ${theme.headingText}`}>
-                                  {arrival.doctorName}
-                                </h5>
-                                <p className={`text-[10px] truncate font-semibold ${theme.accentText}`}>
-                                  {arrival.specialty}
-                                </p>
-                                {arrival.note && (
-                                  <p className={`text-[10px] mt-0.5 leading-snug ${theme.subText}`}>
-                                    {arrival.note}
-                                  </p>
-                                )}
-                                <div
-                                  className={`flex items-center justify-between mt-1.5 pt-1 border-t text-[10px] ${theme.border}`}
-                                >
-                                  <span className={`truncate font-bold ${theme.headingText}`}>
-                                    🕒 {arrival.timing}
-                                  </span>
-                                  <a
-                                    href={DOCTOR_BOOKING_URL}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    onClick={() => {
-                                      addBookingHistoryItem(
-                                        'doctor',
-                                        arrival.doctorName,
-                                        arrival.timing
-                                      );
-                                      setNotifOpen(false);
-                                    }}
-                                    className={`font-extrabold underline flex items-center gap-0.5 ml-1 shrink-0 ${theme.accentText}`}
-                                  >
-                                    Book OPD <ExternalLink className="w-2.5 h-2.5" />
-                                  </a>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* 3. SPECIAL OFFER NOTIFICATIONS */}
-                      {topOffers.length > 0 && (
-                        <div className="space-y-1.5 pt-1">
-                          <span
-                            className={`text-[10px] font-extrabold uppercase tracking-wider block ${theme.accentText}`}
-                          >
-                            🎁 Special Offers
-                          </span>
-                          {topOffers.map((offer) => (
-                            <button
-                              key={offer.id}
-                              type="button"
-                              onClick={() => {
-                                setNotifOpen(false);
-                                onTabChange('offers');
-                              }}
-                              className={`w-full p-2.5 rounded-2xl border text-left transition-colors flex items-center justify-between gap-2 cursor-pointer ${theme.softCardBg}`}
-                            >
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                  <Sparkles className="w-3 h-3 shrink-0" />
-                                  <span
-                                    className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded ${theme.primaryBtn}`}
-                                  >
-                                    {offer.discountText}
-                                  </span>
-                                </div>
-                                <h5 className={`font-extrabold text-xs truncate mt-1 ${theme.headingText}`}>
-                                  {offer.title}
-                                </h5>
-                                <p className={`text-[10px] truncate ${theme.subText}`}>
-                                  {offer.subtitle}
-                                </p>
-                              </div>
+                            <div className="flex items-center justify-between gap-1 mb-1">
                               <span
-                                className={`text-[11px] font-bold shrink-0 flex items-center gap-0.5 ${theme.accentText}`}
+                                className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded ${
+                                  notif.type === 'alert' || notif.type === 'urgent'
+                                    ? 'bg-rose-600 text-white'
+                                    : notif.type === 'offer'
+                                    ? 'bg-amber-500 text-slate-950'
+                                    : 'bg-teal-700 text-white'
+                                }`}
                               >
-                                Open <ArrowRight className="w-3 h-3" />
+                                {notif.badge || notif.category || 'Notice'}
                               </span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                              <span className="text-[9px] font-semibold text-slate-400">
+                                {notif.sentByAdminAt || 'Recent'}
+                              </span>
+                            </div>
 
-                      {activeNotifications.length === 0 && unannouncedArrivals.length === 0 && topOffers.length === 0 && (
+                            <h5 className="font-extrabold text-xs text-slate-900 leading-tight">
+                              {notif.title}
+                            </h5>
+                            <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
+                              {notif.message}
+                            </p>
+
+                            {notif.actionLabel && (
+                              <div className="mt-2 pt-1.5 border-t border-slate-200/60 flex justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setNotifOpen(false);
+                                    if (notif.actionUrl && notif.actionUrl.startsWith('http')) {
+                                      window.open(notif.actionUrl, '_blank', 'noopener,noreferrer');
+                                    } else if (
+                                      notif.actionUrl &&
+                                      ['home', 'doctors', 'store', 'appointments', 'offers'].includes(notif.actionUrl)
+                                    ) {
+                                      onTabChange(notif.actionUrl as any);
+                                    } else {
+                                      const text = (notif.title + ' ' + notif.message).toLowerCase();
+                                      if (text.includes('medicine') || text.includes('store') || text.includes('order')) {
+                                        onTabChange('store');
+                                      } else if (text.includes('doctor') || text.includes('opd') || text.includes('consult')) {
+                                        onTabChange('doctors');
+                                      } else if (text.includes('test') || text.includes('lab') || text.includes('pathology')) {
+                                        onTabChange('appointments');
+                                      } else if (text.includes('offer') || text.includes('discount')) {
+                                        onTabChange('offers');
+                                      }
+                                    }
+                                  }}
+                                  className="text-[10px] font-extrabold text-teal-800 hover:text-teal-950 flex items-center gap-1 cursor-pointer"
+                                >
+                                  <span>{notif.actionLabel}</span>
+                                  <ArrowRight className="w-2.5 h-2.5" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      ) : (
                         <div className="text-center py-6 text-slate-400 text-xs font-medium">
                           No new notifications right now.
                         </div>
@@ -496,11 +381,11 @@ export const Header: React.FC<HeaderProps> = ({
                         type="button"
                         onClick={() => {
                           setNotifOpen(false);
-                          onTabChange('offers');
+                          onTabChange('doctors');
                         }}
                         className={`font-extrabold hover:underline cursor-pointer ${theme.accentText}`}
                       >
-                        🎁 View All Special Offers
+                        Doctors
                       </button>
                       <button
                         type="button"
@@ -510,7 +395,7 @@ export const Header: React.FC<HeaderProps> = ({
                         }}
                         className={`font-bold hover:underline cursor-pointer ${theme.accentText}`}
                       >
-                        Visit Calendar →
+                        OPD Schedule →
                       </button>
                     </div>
                   </div>
@@ -553,7 +438,7 @@ export const Header: React.FC<HeaderProps> = ({
                     />
                   </div>
                   <span className={`font-extrabold text-sm ${theme.headingText}`}>
-                    Life Care Medicine Store
+                    Life Care Poly Clinic
                   </span>
                 </div>
                 <button
@@ -589,7 +474,7 @@ export const Header: React.FC<HeaderProps> = ({
                     activeTab === 'doctors' ? `border ${theme.softCardBg}` : 'hover:opacity-80'
                   }`}
                 >
-                  <span>👨‍⚕️</span> Meet Our Doctors
+                  <span>👨‍⚕️</span> Specialist Doctors
                 </button>
                 <button
                   type="button"
@@ -601,7 +486,7 @@ export const Header: React.FC<HeaderProps> = ({
                     activeTab === 'store' ? `border ${theme.softCardBg}` : 'hover:opacity-80'
                   }`}
                 >
-                  <span>💊</span> Pharmacy & Physiotherapy
+                  <span>💊</span> Pharmacy & Supplies
                 </button>
                 <button
                   type="button"
@@ -613,7 +498,7 @@ export const Header: React.FC<HeaderProps> = ({
                     activeTab === 'appointments' ? `border ${theme.softCardBg}` : 'hover:opacity-80'
                   }`}
                 >
-                  <span>📋</span> Bookings, History & Calendar
+                  <span>📋</span> OPD Schedule & History
                 </button>
                 <button
                   type="button"
@@ -641,7 +526,7 @@ export const Header: React.FC<HeaderProps> = ({
                         Install Life Care App
                       </span>
                       <span className="text-[10px] text-teal-700 font-medium block">
-                        Save icon to your home screen
+                        Add to your home screen
                       </span>
                     </div>
                   </div>
@@ -652,7 +537,7 @@ export const Header: React.FC<HeaderProps> = ({
                     className="w-full py-2 px-3 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-98 cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5" />
-                    <span>Download App to Home Screen</span>
+                    <span>Install App</span>
                   </button>
 
                   {showIosTip && (

@@ -25,10 +25,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
         <button
           type="button"
           onClick={() => onTabChange('doctors')}
-          className={`flex flex-col items-center justify-center py-1 transition-colors cursor-pointer ${
+          className={`flex flex-col items-center justify-center py-1 transition-all cursor-pointer ${
             activeTab === 'doctors'
-              ? `${p.accentText} font-bold`
-              : `${p.mutedText} hover:opacity-90`
+              ? 'text-purple-600 font-black scale-105'
+              : 'text-slate-400 hover:text-purple-500'
           }`}
         >
           <Users className="w-5 h-5 mb-0.5" />
@@ -39,10 +39,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
         <button
           type="button"
           onClick={() => onTabChange('store')}
-          className={`flex flex-col items-center justify-center py-1 transition-colors cursor-pointer ${
+          className={`flex flex-col items-center justify-center py-1 transition-all cursor-pointer ${
             activeTab === 'store'
-              ? `${p.accentText} font-bold`
-              : `${p.mutedText} hover:opacity-90`
+              ? 'text-blue-600 font-black scale-105'
+              : 'text-slate-400 hover:text-blue-500'
           }`}
         >
           <Pill className="w-5 h-5 mb-0.5" />
@@ -56,13 +56,13 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           type="button"
           onClick={() => onTabChange('home')}
           aria-label="Home"
-          className={`w-12 h-12 -mt-5 rounded-full flex items-center justify-center shadow-md transition-all active:scale-95 border-3 cursor-pointer border-white ${p.primaryBtn}`}
+          className="w-12 h-12 -mt-5 rounded-full flex items-center justify-center shadow-lg transition-all active:scale-95 border-3 cursor-pointer border-white bg-gradient-to-tr from-teal-700 via-teal-600 to-emerald-600 text-white shadow-teal-700/30"
         >
           <Home className="w-5 h-5" />
         </button>
         <span
-          className={`text-[10px] mt-0.5 font-bold ${
-            activeTab === 'home' ? p.accentText : p.mutedText
+          className={`text-[10px] mt-0.5 font-black ${
+            activeTab === 'home' ? 'text-teal-700' : 'text-slate-400'
           }`}
         >
           {t.home || 'Home'}
@@ -75,10 +75,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
         <button
           type="button"
           onClick={() => onTabChange('appointments')}
-          className={`flex flex-col items-center justify-center py-1 transition-colors cursor-pointer ${
+          className={`flex flex-col items-center justify-center py-1 transition-all cursor-pointer ${
             activeTab === 'appointments'
-              ? `${p.accentText} font-bold`
-              : `${p.mutedText} hover:opacity-90`
+              ? 'text-rose-600 font-black scale-105'
+              : 'text-slate-400 hover:text-rose-500'
           }`}
         >
           <ShieldCheck className="w-5 h-5 mb-0.5" />

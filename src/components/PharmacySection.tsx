@@ -10,7 +10,8 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
-import { CLINIC_CONFIG, getThemePalette } from '../data/clinicData';
+import { CLINIC_CONFIG, getThemePalette, addStoreOrder } from '../data/clinicData';
+import { syncCustomerOrderToFirestore } from '../services/firebase';
 
 interface PharmacySectionProps {
   products: Product[];
@@ -97,6 +98,22 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
 
   const handleSendWhatsApp = () => {
     if (cart.length === 0) return;
+
+    const newOrder = addStoreOrder({
+      customerName: customerName.trim() || 'WhatsApp Customer',
+      customerPhone: customerPhone.trim() || 'Not provided',
+      items: cart.map((item) => ({
+        name: item.product.name,
+        quantity: item.quantity,
+        price: item.product.price,
+      })),
+      totalAmount,
+      source: 'whatsapp',
+      paymentStatus: 'Pending',
+      orderStatus: 'New',
+    });
+    syncCustomerOrderToFirestore(newOrder).catch(() => {});
+
     const itemList = cart
       .map(
         (item) =>
@@ -105,11 +122,11 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
           }`
       )
       .join('\n');
-    const msg = `Hello Life Care Medicine Store and Poly Clinic,\nI would like to order/inquire about the following products:\n\n${itemList}\n\n*Estimated Total: ₹${totalAmount}*\nPatient/Customer: ${
+    const msg = `Hello Life Care Medicine Store and Poly Clinic,\nI would like to order:\n\n${itemList}\n\n*Total: ₹${totalAmount}*\nName: ${
       customerName || 'Customer'
     }\nPhone: ${
       customerPhone || 'Not provided'
-    }\nPlease confirm availability and delivery/pickup.`;
+    }`;
     const url = `https://wa.me/${CLINIC_CONFIG.whatsapp.replace(
       /[^0-9]/g,
       ''
@@ -119,16 +136,13 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
 
   return (
     <section className="pt-4 pb-6 px-4 relative" id="store-section">
-      {/* Store Section Heading (No duplicate frozen bag here) */}
-      <div className="mb-3">
+      {/* Store Section Heading */}
+      <div className="mb-3 flex items-center justify-between">
         <h2
-          className={`text-lg sm:text-xl font-bold tracking-tight flex items-center gap-2 ${theme.headingText}`}
+          className={`text-lg sm:text-xl font-black tracking-tight flex items-center gap-2 ${theme.headingText}`}
         >
-          <span>💊</span> {t.pharmacyTitle || 'Pharmacy & Physio Supplies'}
+          <span>💊</span> Pharmacy & Supplies
         </h2>
-        <p className={`text-xs mt-0.5 ${theme.subText}`}>
-          Genuine medicines, braces & physiotherapy supplies
-        </p>
       </div>
 
       {/* Single Floating Bag Pill that moves with scrolling */}
@@ -136,7 +150,7 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
         type="button"
         onClick={() => setCartOpen(true)}
         className={`fixed bottom-20 right-4 z-30 px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-extrabold transition-all active:scale-95 cursor-pointer border ${theme.primaryBtn}`}
-        title="Open Life Care Order Bag"
+        title="Open Order Bag"
       >
         <ShoppingBag className="w-4 h-4" />
         <span>Bag ({totalItems})</span>
@@ -174,19 +188,28 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
           className="flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth flex-1 py-0.5"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
-          {categories.map((cat) => (
-            <button
-              key={cat.id}
-              type="button"
-              onClick={() => setSelectedCategory(cat.id)}
-              className={`shrink-0 whitespace-nowrap px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs border ${
-                selectedCategory === cat.id ? theme.primaryBtn : theme.cardBg
-              }`}
-            >
-              <span>{cat.icon}</span>
-              <span>{cat.label}</span>
-            </button>
-          ))}
+          {categories.map((cat) => {
+            const isSelected = selectedCategory === cat.id;
+            let activeColorClass = 'bg-teal-700 text-white border-teal-700 shadow-sm';
+            if (cat.id === 'physio') activeColorClass = 'bg-blue-600 text-white border-blue-600 shadow-sm';
+            if (cat.id === 'medicines') activeColorClass = 'bg-indigo-600 text-white border-indigo-600 shadow-sm';
+            if (cat.id === 'wellness') activeColorClass = 'bg-amber-500 text-slate-950 border-amber-500 shadow-sm font-black';
+            if (cat.id === 'babycare') activeColorClass = 'bg-rose-500 text-white border-rose-500 shadow-sm';
+
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setSelectedCategory(cat.id)}
+                className={`shrink-0 whitespace-nowrap px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
+                  isSelected ? activeColorClass : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <span>{cat.icon}</span>
+                <span>{cat.label}</span>
+              </button>
+            );
+          })}
         </div>
 
         <button
@@ -246,11 +269,8 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
                   <h4 className={`font-bold text-xs leading-snug line-clamp-2 ${theme.headingText}`}>
                     {product.name}
                   </h4>
-                  <p className={`text-[11px] mt-1 line-clamp-2 leading-relaxed ${theme.subText}`}>
-                    {product.description}
-                  </p>
-                  <span className={`text-[10px] block mt-1 ${theme.accentText}`}>
-                    Pack: {product.unit}
+                  <span className={`text-[10px] font-semibold block mt-1 ${theme.accentText}`}>
+                    {product.unit}
                   </span>
                 </div>
               </div>
@@ -344,7 +364,7 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
                 <div className="flex items-center gap-2">
                   <ShoppingBag className={`w-5 h-5 ${theme.accentText}`} />
                   <h3 className={`font-bold text-base ${theme.headingText}`}>
-                    Life Care Order Bag
+                    Your Order Bag
                   </h3>
                 </div>
                 <button
@@ -409,7 +429,7 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
             {cart.length > 0 && (
               <div className={`pt-3 border-t space-y-3 ${theme.border}`}>
                 <div className={`flex items-center justify-between text-sm font-bold ${theme.headingText}`}>
-                  <span>Total Estimated Cost</span>
+                  <span>Estimated Total</span>
                   <span className={`text-base ${theme.accentText}`}>₹{totalAmount}</span>
                 </div>
 
@@ -425,7 +445,7 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
                     type="tel"
                     value={customerPhone}
                     onChange={(e) => setCustomerPhone(e.target.value)}
-                    placeholder="Your Mobile for Delivery/Pickup Confirmation"
+                    placeholder="Mobile Number for Delivery / Confirmation"
                     className={`w-full px-3 py-2 text-xs border rounded-xl ${theme.subtleBg}`}
                   />
                 </div>
@@ -436,12 +456,8 @@ export const PharmacySection: React.FC<PharmacySectionProps> = ({
                   className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 cursor-pointer"
                 >
                   <MessageCircle className="w-4 h-4" />
-                  <span>Send Order Inquiry via WhatsApp</span>
+                  <span>Order via WhatsApp</span>
                 </button>
-
-                <p className={`text-[10px] text-center ${theme.subText}`}>
-                  Pharmacy verifies prescription items before dispatch. Free store pickup available.
-                </p>
               </div>
             )}
           </div>

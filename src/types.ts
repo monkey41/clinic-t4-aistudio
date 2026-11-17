@@ -106,3 +106,32 @@ export interface ClinicConfig {
   doctorBookingUrl: string;
   pathologyBookingUrl: string;
 }
+
+export interface StoreOrderItem {
+  name: string;
+  quantity: number;
+  price: number;
+}
+
+export interface StoreOrder {
+  id: string;
+  customerName: string;
+  customerPhone: string;
+  items: StoreOrderItem[];
+  totalAmount: number;
+  source: 'whatsapp' | 'walk-in';
+  paymentStatus: 'Pending' | 'Paid';
+  orderStatus: 'New' | 'Packed' | 'Delivered';
+  createdAt: string;
+}
+
+export interface CashTransaction {
+  id: string;
+  type: 'in' | 'out';
+  category: string;
+  amount: number;
+  paymentMode: 'Cash' | 'UPI' | 'Card';
+  note: string;
+  createdAt: string;
+}
+

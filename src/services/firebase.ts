@@ -6,6 +6,10 @@ import {
   onAuthStateChanged,
   setPersistence,
   inMemoryPersistence,
+  sendPasswordResetEmail,
+  updatePassword,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
   User,
   Auth,
 } from 'firebase/auth';
@@ -21,7 +25,14 @@ import {
   Unsubscribe,
   Firestore,
 } from 'firebase/firestore';
-import { Product, DoctorArrival, ClinicNotification } from '../types';
+import {
+  Product,
+  Doctor,
+  DoctorArrival,
+  ClinicNotification,
+  StoreOrder,
+  CashTransaction,
+} from '../types';
 
 // Load Firebase configuration from Vite environment variables (VITE_FIREBASE_*)
 // Default fallback values configured from user's Firebase project
@@ -221,11 +232,189 @@ export async function adminSignIn(
   }
 }
 
+export interface PasswordStrengthResult {
+  valid: boolean;
+  score: number;
+  checks: {
+    minLength: boolean;
+    hasUpper: boolean;
+    hasLower: boolean;
+    hasNumber: boolean;
+    hasSpecial: boolean;
+  };
+  label: 'Weak' | 'Fair' | 'Good' | 'Strong';
+  message: string;
+}
+
+export function validateStrongPassword(password: string): PasswordStrengthResult {
+  const checks = {
+    minLength: password.length >= 8,
+    hasUpper: /[A-Z]/.test(password),
+    hasLower: /[a-z]/.test(password),
+    hasNumber: /[0-9]/.test(password),
+    hasSpecial: /[^A-Za-z0-9]/.test(password),
+  };
+  const score = Object.values(checks).filter(Boolean).length;
+  const valid = score === 5;
+  const label: PasswordStrengthResult['label'] =
+    score >= 5 ? 'Strong' : score >= 4 ? 'Good' : score >= 3 ? 'Fair' : 'Weak';
+
+  const missing: string[] = [];
+  if (!checks.minLength) missing.push('8+ chars');
+  if (!checks.hasUpper) missing.push('uppercase');
+  if (!checks.hasLower) missing.push('lowercase');
+  if (!checks.hasNumber) missing.push('number');
+  if (!checks.hasSpecial) missing.push('symbol');
+
+  return {
+    valid,
+    score,
+    checks,
+    label,
+    message: valid ? 'Strong password' : `Needs: ${missing.join(', ')}`,
+  };
+}
+
+export function getOrCreateDeviceId(): string {
+  try {
+    let id = localStorage.getItem('lifecare_device_id');
+    if (!id) {
+      id = 'dev_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+      localStorage.setItem('lifecare_device_id', id);
+    }
+    return id;
+  } catch {
+    return 'dev_' + Math.random().toString(36).substring(2, 10);
+  }
+}
+
+export function getReadableDeviceLabel(): string {
+  if (typeof navigator === 'undefined') return 'Web Browser';
+  const ua = navigator.userAgent;
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+  const os = /iPhone|iPad|iPod/i.test(ua)
+    ? 'iOS'
+    : /Android/i.test(ua)
+    ? 'Android'
+    : /Windows/i.test(ua)
+    ? 'Windows'
+    : /Mac/i.test(ua)
+    ? 'Mac'
+    : 'Linux';
+  const browser = /Edg/i.test(ua)
+    ? 'Edge'
+    : /Chrome|CriOS/i.test(ua)
+    ? 'Chrome'
+    : /Safari/i.test(ua)
+    ? 'Safari'
+    : /Firefox/i.test(ua)
+    ? 'Firefox'
+    : 'Browser';
+  return `${isMobile ? 'Phone' : 'PC'} • ${os} (${browser})`;
+}
+
+/**
+ * Send Firebase Password Reset Email to Admin
+ */
+export async function sendAdminPasswordReset(
+  email: string
+): Promise<{ success: boolean; message: string }> {
+  const cleanEmail = email.trim().toLowerCase();
+  if (!cleanEmail) {
+    return { success: false, message: 'Enter your admin email address.' };
+  }
+
+  const auth = getFirebaseAuth();
+  if (!auth) {
+    return {
+      success: false,
+      message: 'Firebase Auth is not active in this environment.',
+    };
+  }
+
+  try {
+    await sendPasswordResetEmail(auth, cleanEmail);
+    return {
+      success: true,
+      message: `Password reset email sent to ${cleanEmail}. Check your inbox or spam folder.`,
+    };
+  } catch (err: any) {
+    let msg = 'Could not send reset email.';
+    if (err.code === 'auth/user-not-found') {
+      msg = 'No admin account found for that email.';
+    } else if (err.code === 'auth/invalid-email') {
+      msg = 'Please enter a valid email address.';
+    } else if (err.code === 'auth/too-many-requests') {
+      msg = 'Too many requests. Please wait a few minutes.';
+    } else if (err.message) {
+      msg = err.message;
+    }
+    return { success: false, message: msg };
+  }
+}
+
+/**
+ * Update signed-in admin's password with strong password enforcement
+ */
+export async function updateAdminPassword(
+  currentPassword: string,
+  newPassword: string
+): Promise<{ success: boolean; message: string }> {
+  const strength = validateStrongPassword(newPassword);
+  if (!strength.valid) {
+    return { success: false, message: `Weak password — ${strength.message}` };
+  }
+
+  const auth = getFirebaseAuth();
+  const user = auth?.currentUser;
+  if (!user || !user.email) {
+    return { success: false, message: 'No active Firebase admin session found.' };
+  }
+
+  try {
+    const credential = EmailAuthProvider.credential(user.email, currentPassword);
+    await reauthenticateWithCredential(user, credential);
+    await updatePassword(user, newPassword);
+    return { success: true, message: 'Admin password updated successfully!' };
+  } catch (err: any) {
+    let msg = 'Failed to update password.';
+    if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+      msg = 'Current password is incorrect.';
+    } else if (err.code === 'auth/requires-recent-login') {
+      msg = 'Please sign out and sign in again before changing your password.';
+    } else if (err.message) {
+      msg = err.message;
+    }
+    return { success: false, message: msg };
+  }
+}
+
 /**
  * Admin Logout & Session Cleanup
  */
 export async function adminSignOut(): Promise<void> {
   const auth = getFirebaseAuth();
+  const db = getFirebaseDb();
+  const currentUid = auth?.currentUser?.uid;
+  const localSessionId = sessionStorage.getItem('lifecare_admin_session_id');
+
+  // Clear cloud activeSessionId ONLY if it still belongs to this machine/session
+  if (db && currentUid && localSessionId) {
+    try {
+      const adminRef = doc(db, 'admins', currentUid);
+      const snap = await getDoc(adminRef);
+      if (snap.exists() && snap.data()?.activeSessionId === localSessionId) {
+        await setDoc(
+          adminRef,
+          { activeSessionId: null, lastActiveAt: new Date().toISOString() },
+          { merge: true }
+        );
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   if (auth) {
     try {
       await signOut(auth);
@@ -241,13 +430,15 @@ export async function adminSignOut(): Promise<void> {
 
 /**
  * Register single active session for an admin in Firestore and local storage.
- * Enforces one active machine per admin account at any time.
+ * Enforces one active machine/phone per admin account at any time.
  */
 export async function registerAdminSession(
   user: User,
   adminName?: string
 ): Promise<string> {
-  const sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+  const deviceId = getOrCreateDeviceId();
+  const deviceLabel = getReadableDeviceLabel();
+  const sessionId = `sess_${deviceId}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   localStorage.setItem('lifecare_admin_session_id', sessionId);
   sessionStorage.setItem('lifecare_admin_session_id', sessionId);
 
@@ -262,9 +453,10 @@ export async function registerAdminSession(
           email: (user.email || '').toLowerCase(),
           name: adminName || user.displayName || 'Clinic Administrator',
           activeSessionId: sessionId,
+          activeDeviceId: deviceId,
           lastLoginAt: new Date().toISOString(),
           lastActiveAt: new Date().toISOString(),
-          deviceInfo: typeof navigator !== 'undefined' ? navigator.userAgent.substring(0, 120) : 'Web App',
+          deviceInfo: deviceLabel,
           active: true,
         },
         { merge: true }
@@ -289,8 +481,8 @@ export async function registerAdminSession(
 }
 
 /**
- * Real-time listener for the admin's session.
- * If another machine or browser signs into this admin account, Firestore will update
+ * Real-time listener + heartbeat verification for the admin's single-machine session.
+ * If another machine or phone signs into this admin account, Firestore updates
  * activeSessionId to a different value, triggering onSessionRevoked immediately.
  */
 export function listenToAdminSession(
@@ -300,6 +492,27 @@ export function listenToAdminSession(
 ): () => void {
   const db = getFirebaseDb();
   let unsubFirestore: (() => void) | null = null;
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  let revoked = false;
+
+  const triggerRevoke = (msg: string) => {
+    if (revoked) return;
+    revoked = true;
+    onSessionRevoked(msg);
+  };
+
+  const inspectDocData = (data: Record<string, any> | undefined) => {
+    if (!data) return;
+    if (data.active === false) {
+      triggerRevoke('Your administrator account access has been deactivated.');
+      return;
+    }
+    if (data.activeSessionId && localSessionId && data.activeSessionId !== localSessionId) {
+      triggerRevoke(
+        `Session ended: Logged in from another device (${data.deviceInfo || 'Another machine/phone'}). Only 1 device is allowed at a time.`
+      );
+    }
+  };
 
   if (db && uid) {
     try {
@@ -308,22 +521,26 @@ export function listenToAdminSession(
         adminRef,
         (snap) => {
           if (snap.exists()) {
-            const data = snap.data();
-            if (data && data.active === false) {
-              onSessionRevoked('Your administrator account access has been deactivated.');
-              return;
-            }
-            if (data?.activeSessionId && localSessionId && data.activeSessionId !== localSessionId) {
-              onSessionRevoked(
-                'Session Terminated: This admin account was signed in from another machine or browser. Only one active machine is allowed at a time for security.'
-              );
-            }
+            inspectDocData(snap.data());
           }
         },
         (err) => {
           console.warn('Admin session real-time listener error:', err);
         }
       );
+
+      // Periodic verification in case mobile browser suspends real-time socket
+      heartbeatTimer = setInterval(async () => {
+        if (revoked) return;
+        try {
+          const snap = await getDoc(adminRef);
+          if (snap.exists()) {
+            inspectDocData(snap.data());
+          }
+        } catch {
+          // ignore transient offline
+        }
+      }, 10000);
     } catch (err) {
       console.warn('Could not start Firestore session listener:', err);
     }
@@ -340,7 +557,7 @@ export function listenToAdminSession(
           event.data?.uid === uid &&
           event.data?.sessionId !== localSessionId
         ) {
-          onSessionRevoked('Signed out: Another session was opened for this admin account.');
+          triggerRevoke('Session ended: Another tab or device signed into this admin account.');
         }
       };
     }
@@ -350,6 +567,7 @@ export function listenToAdminSession(
 
   return () => {
     if (unsubFirestore) unsubFirestore();
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
     if (bc) bc.close();
   };
 }
@@ -537,9 +755,16 @@ export async function fetchProductsFromFirestore(): Promise<Product[] | null> {
     if (snapshot.empty) return null;
 
     const list: Product[] = [];
+    const feedDocIds = new Set([
+      'clinic_notifications_feed',
+      'clinic_arrivals_feed',
+      'clinic_doctors_feed',
+      'clinic_orders_feed',
+      'clinic_ledger_feed',
+    ]);
     snapshot.forEach((d) => {
       // Exclude feed documents
-      if (d.id !== 'clinic_notifications_feed' && d.id !== 'clinic_arrivals_feed') {
+      if (!feedDocIds.has(d.id)) {
         const data = d.data();
         if (data && data.name && data.category) {
           list.push(data as Product);
@@ -916,3 +1141,161 @@ export function subscribeToArrivals(
     return () => {};
   }
 }
+
+/**
+ * =========================================================================
+ * DOCTORS SYNC (Allows Admin photo/profile edits to reflect on all phones)
+ * =========================================================================
+ */
+export async function syncDoctorsToFirestore(doctors: Doctor[]): Promise<boolean> {
+  const db = getFirebaseDb();
+  if (!db) return false;
+  try {
+    const feedRef = doc(db, 'products', 'clinic_doctors_feed');
+    await setDoc(feedRef, {
+      items: doctors,
+      updatedAt: new Date().toISOString(),
+    });
+    return true;
+  } catch (err) {
+    console.warn('Could not sync doctors to Firestore:', err);
+    return false;
+  }
+}
+
+export async function fetchDoctorsFromFirestore(): Promise<Doctor[] | null> {
+  const db = getFirebaseDb();
+  if (!db) return null;
+  try {
+    const feedRef = doc(db, 'products', 'clinic_doctors_feed');
+    const snap = await getDoc(feedRef);
+    if (snap.exists() && Array.isArray(snap.data()?.items)) {
+      return snap.data().items as Doctor[];
+    }
+  } catch (err) {
+    console.warn('Could not fetch doctors from Firestore:', err);
+  }
+  return null;
+}
+
+export function subscribeToDoctors(callback: (doctors: Doctor[]) => void): () => void {
+  const db = getFirebaseDb();
+  if (!db) return () => {};
+  try {
+    const feedRef = doc(db, 'products', 'clinic_doctors_feed');
+    return onSnapshot(
+      feedRef,
+      (snap) => {
+        if (snap.exists() && Array.isArray(snap.data()?.items)) {
+          callback(snap.data().items as Doctor[]);
+        }
+      },
+      () => {}
+    );
+  } catch {
+    return () => {};
+  }
+}
+
+/**
+ * =========================================================================
+ * CUSTOMER ORDERS & DAILY CASH LEDGER SYNC
+ * =========================================================================
+ */
+export async function syncCustomerOrderToFirestore(order: StoreOrder): Promise<boolean> {
+  const db = getFirebaseDb();
+  if (!db) return false;
+  try {
+    const orderRef = doc(db, 'orders', order.id);
+    await setDoc(orderRef, {
+      ...order,
+      updatedAt: new Date().toISOString(),
+    });
+    return true;
+  } catch (err) {
+    console.warn('Could not sync customer order to Firestore:', err);
+    return false;
+  }
+}
+
+export async function syncAdminOrdersToFirestore(orders: StoreOrder[]): Promise<boolean> {
+  const db = getFirebaseDb();
+  if (!db) return false;
+  try {
+    const feedRef = doc(db, 'products', 'clinic_orders_feed');
+    await setDoc(feedRef, {
+      items: orders.slice(0, 150),
+      updatedAt: new Date().toISOString(),
+    });
+    return true;
+  } catch (err) {
+    console.warn('Could not sync admin orders feed:', err);
+    return false;
+  }
+}
+
+export async function fetchAdminOrdersFromFirestore(): Promise<StoreOrder[] | null> {
+  const db = getFirebaseDb();
+  if (!db) return null;
+  try {
+    const map = new Map<string, StoreOrder>();
+
+    const feedSnap = await getDoc(doc(db, 'products', 'clinic_orders_feed'));
+    if (feedSnap.exists() && Array.isArray(feedSnap.data()?.items)) {
+      for (const item of feedSnap.data().items as StoreOrder[]) {
+        map.set(item.id, item);
+      }
+    }
+
+    try {
+      const colSnap = await getDocs(collection(db, 'orders'));
+      colSnap.forEach((d) => {
+        const data = d.data() as StoreOrder;
+        if (data?.id && !map.has(data.id)) {
+          map.set(data.id, data);
+        }
+      });
+    } catch {
+      // ignore if rules block
+    }
+
+    const combined = Array.from(map.values()).sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    return combined;
+  } catch (err) {
+    console.warn('Could not fetch orders from Firestore:', err);
+    return null;
+  }
+}
+
+export async function syncTransactionsToFirestore(transactions: CashTransaction[]): Promise<boolean> {
+  const db = getFirebaseDb();
+  if (!db) return false;
+  try {
+    const feedRef = doc(db, 'products', 'clinic_ledger_feed');
+    await setDoc(feedRef, {
+      items: transactions.slice(0, 250),
+      updatedAt: new Date().toISOString(),
+    });
+    return true;
+  } catch (err) {
+    console.warn('Could not sync cash transactions:', err);
+    return false;
+  }
+}
+
+export async function fetchTransactionsFromFirestore(): Promise<CashTransaction[] | null> {
+  const db = getFirebaseDb();
+  if (!db) return null;
+  try {
+    const snap = await getDoc(doc(db, 'products', 'clinic_ledger_feed'));
+    if (snap.exists() && Array.isArray(snap.data()?.items)) {
+      return snap.data().items as CashTransaction[];
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+

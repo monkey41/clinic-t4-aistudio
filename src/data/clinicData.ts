@@ -8,6 +8,8 @@ import {
   SpecialOffer,
   BookingHistoryItem,
   ClinicConfig,
+  StoreOrder,
+  CashTransaction,
 } from '../types';
 import kneeBraceImg from '../assets/images/ortho_knee_brace_1790317702669.jpg';
 import lumbarBeltImg from '../assets/images/lumbar_belt_1790317715183.jpg';
@@ -148,8 +150,8 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     subBrand: 'Pharmacy • Poly Clinic • Pathology',
     badge: '🏥 MEDICINE STORE • POLY CLINIC • PATHOLOGY',
     heroTitle: 'Caring for your family. Supporting your health',
-    heroText: 'Consult verified specialist doctors, book pathology blood tests, order authentic medicines, and access certified physiotherapy rehabilitation supports in Baripada.',
-    meetDoctors: 'Meet Our Doctors →',
+    heroText: 'Consult specialist doctors, book pathology tests, order medicines, and access certified physiotherapy supplies in Baripada.',
+    meetDoctors: 'Meet Our Doctors',
     appointment: 'Book Appointment',
     appointmentText: 'Schedule a consultation with our experienced specialists.',
     pharmacy: 'Pharmacy Products',
@@ -157,24 +159,24 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     physio: 'Physiotherapy',
     physioText: 'Orthopedic braces, pain relief, and rehab essentials.',
     contact: 'Contact Clinic',
-    contactText: 'Get live GPS directions or call our reception desk.',
-    doctors: 'Meet Our Doctors',
-    swipe: 'Swipe cards →',
-    book: 'BOOK NOW',
-    swipeHint: 'Swipe cards left or right or use arrows to view all 11 specialists',
-    locationTitle: 'Find Life Care Medicine Store and Poly Clinic',
-    locationSmall: 'Your trusted neighborhood healthcare point',
-    mapNote: 'Life Care Medicine Store and Poly Clinic',
-    directions: 'GET DIRECTIONS ↗',
-    callUs: 'CALL CLINIC',
-    pharmacyTitle: '💊 Pharmacy Products',
+    contactText: 'Get directions or call our reception desk.',
+    doctors: 'Specialist Doctors',
+    swipe: 'Swipe',
+    book: 'Book Now',
+    swipeHint: 'Swipe or use arrows to view specialists',
+    locationTitle: 'Clinic Location',
+    locationSmall: 'Hospital Square, Baripada',
+    mapNote: 'Life Care Medicine Store & Poly Clinic',
+    directions: 'Get Directions',
+    callUs: 'Call Clinic',
+    pharmacyTitle: 'Pharmacy & Supplies',
     pharmacyBody: 'Genuine prescription medicines, vitamins, immunity boosters, first-aid, and daily hygiene essentials.',
-    physioTitle: '🦵 Physiotherapy & Orthopedic Essentials',
-    physioBody: 'Doctor-recommended orthopedic knee braces, lumbar belts, hot & cold therapy pads, resistance bands, and post-surgery aids.',
-    needHelp: 'Need immediate medical assistance?',
+    physioTitle: 'Physiotherapy & Orthopedic Supplies',
+    physioBody: 'Doctor-recommended orthopedic knee braces, lumbar belts, hot & cold therapy pads, and rehabilitation aids.',
+    needHelp: 'Need assistance?',
     callTeam: 'Direct line to our clinic reception and pharmacists',
-    callNow: 'CALL NOW',
-    footer: '© 2026 Life Care Medicine Store and Poly Clinic • Baripada • Serving our community with compassion.',
+    callNow: 'Call Now',
+    footer: '© 2026 Life Care Medicine Store and Poly Clinic • Baripada',
     home: 'Home',
     doctorsNav: 'Doctors',
     bookNav: 'Book',
@@ -182,9 +184,9 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     cart: 'Cart',
     allCategories: 'All Products',
     inStock: 'In Stock',
-    addToCart: 'Order / Request',
-    orderOnWhatsApp: 'Inquire on WhatsApp',
-    filterByDept: 'All Departments',
+    addToCart: 'Add to Bag',
+    orderOnWhatsApp: 'Order via WhatsApp',
+    filterByDept: 'All Specialties',
   },
   or: {
     brand: 'ଲାଇଫ୍ କେୟାର ମେଡିସିନ୍ ଷ୍ଟୋର ଓ ପଲି କ୍ଲିନିକ୍',
@@ -544,22 +546,22 @@ export function saveUnannouncedArrivals(arrivals: DoctorArrival[]): void {
 export const DEFAULT_CLINIC_NOTIFICATIONS: ClinicNotification[] = [
   {
     id: 'notif-welcome',
-    title: '🏥 Life Care Pharmacy & Poly Clinic Open 7 Days',
+    title: 'Pharmacy & Poly Clinic Open Daily',
     message: 'Genuine prescription medicines, pathology lab testing, and specialist doctor consultations available daily at Hospital Square, Baripada.',
     type: 'general',
     category: 'Clinic Announcement',
-    badge: 'Notice',
+    badge: 'Open Daily',
     active: true,
     createdAt: new Date().toISOString(),
-    sentByAdminAt: 'Always Active',
-    actionLabel: 'Explore Services',
+    sentByAdminAt: 'Active',
+    actionLabel: 'View Services',
   },
   {
     id: 'notif-home-delivery',
-    title: '🚚 Free Medicine Delivery in Baripada Town',
-    message: 'Send your prescription on WhatsApp or order online from our store for instant doorstep medicine delivery.',
+    title: 'Medicine Home Delivery in Baripada',
+    message: 'Send your prescription on WhatsApp or order online from our store for fast doorstep delivery.',
     type: 'offer',
-    category: 'Service Update',
+    category: 'Delivery Update',
     badge: 'Free Delivery',
     active: true,
     createdAt: new Date().toISOString(),
@@ -1093,6 +1095,87 @@ export function saveSpecialOffers(offers: SpecialOffer[]): void {
   }
 }
 
+// Store Orders Persistence (for Daily Operations Dashboard)
+export function getStoreOrders(): StoreOrder[] {
+  try {
+    const saved = localStorage.getItem('lifecare_store_orders');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.error(e);
+  }
+  return [];
+}
+
+export function saveStoreOrders(orders: StoreOrder[]): void {
+  try {
+    localStorage.setItem('lifecare_store_orders', JSON.stringify(orders.slice(0, 200)));
+    notifyClinicDataChanged();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+export function addStoreOrder(order: Omit<StoreOrder, 'id' | 'createdAt'>): StoreOrder {
+  const fullOrder: StoreOrder = {
+    ...order,
+    id: `ord-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    createdAt: new Date().toISOString(),
+  };
+  const current = getStoreOrders();
+  saveStoreOrders([fullOrder, ...current]);
+  return fullOrder;
+}
+
+// Daily Cash In & Cash Out Ledger Persistence
+export function getCashTransactions(): CashTransaction[] {
+  try {
+    const saved = localStorage.getItem('lifecare_cash_transactions');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.error(e);
+  }
+  return [];
+}
+
+export function saveCashTransactions(transactions: CashTransaction[]): void {
+  try {
+    localStorage.setItem('lifecare_cash_transactions', JSON.stringify(transactions.slice(0, 300)));
+    notifyClinicDataChanged();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+export function addCashTransaction(
+  tx: Omit<CashTransaction, 'id' | 'createdAt'>
+): CashTransaction {
+  const fullTx: CashTransaction = {
+    ...tx,
+    id: `tx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    createdAt: new Date().toISOString(),
+  };
+  const current = getCashTransactions();
+  saveCashTransactions([fullTx, ...current]);
+  return fullTx;
+}
+
+export function isSameLocalDate(isoString: string, targetDate: Date = new Date()): boolean {
+  if (!isoString) return false;
+  const d = new Date(isoString);
+  if (Number.isNaN(d.getTime())) return false;
+  return (
+    d.getFullYear() === targetDate.getFullYear() &&
+    d.getMonth() === targetDate.getMonth() &&
+    d.getDate() === targetDate.getDate()
+  );
+}
+
 // Reset all store data back to factory defaults
 export function resetAllToFactoryDefaults(): void {
   try {
@@ -1110,3 +1193,4 @@ export function resetAllToFactoryDefaults(): void {
     console.error(e);
   }
 }
+

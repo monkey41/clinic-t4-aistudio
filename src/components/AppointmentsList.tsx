@@ -129,11 +129,11 @@ export const AppointmentsList: React.FC<AppointmentsListProps> = ({
           className={`flex-1 py-2 px-3 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
             subTab === 'calendar'
               ? 'bg-teal-700 text-white shadow-xs'
-              : 'text-slate-600 hover:text-slate-900'
+              : 'text-slate-600 hover:text-teal-700'
           }`}
         >
           <CalendarIcon className="w-3.5 h-3.5" />
-          <span>Doctor OPD & Calendar</span>
+          <span>Doctor OPD Schedule</span>
         </button>
 
         <button
@@ -141,12 +141,12 @@ export const AppointmentsList: React.FC<AppointmentsListProps> = ({
           onClick={() => setSubTab('pathology')}
           className={`flex-1 py-2 px-3 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
             subTab === 'pathology'
-              ? 'bg-teal-700 text-white shadow-xs'
-              : 'text-slate-600 hover:text-slate-900'
+              ? 'bg-rose-600 text-white shadow-xs'
+              : 'text-slate-600 hover:text-rose-600'
           }`}
         >
           <FlaskConical className="w-3.5 h-3.5" />
-          <span>Pathology Tests ({tests.length})</span>
+          <span>Pathology Lab Tests</span>
         </button>
       </div>
 
@@ -159,11 +159,8 @@ export const AppointmentsList: React.FC<AppointmentsListProps> = ({
           <div className="flex items-center justify-between gap-2">
             <div>
               <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight flex items-center gap-1.5">
-                <span>📅</span> Doctor OPD Schedule & Dates
+                <span>📅</span> Doctor OPD Schedule
               </h2>
-              <p className="text-[11px] text-slate-500 font-medium">
-                Select a date below to view visiting specialists & availability.
-              </p>
             </div>
 
             <button
@@ -186,10 +183,10 @@ export const AppointmentsList: React.FC<AppointmentsListProps> = ({
           {/* 2. Compact Next 7 Days Date Selector */}
           <div className="bg-white rounded-2xl p-3 border border-slate-200 shadow-2xs space-y-2">
             <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 px-1">
-              <span>Next 7 Days OPD Dates</span>
-              <span className="text-[10px] text-teal-700 flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span>Green = Specialist Visiting</span>
+              <span>Upcoming Dates</span>
+              <span className="text-[10px] text-emerald-700 font-black flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>Specialist Visiting</span>
               </span>
             </div>
 
@@ -204,9 +201,9 @@ export const AppointmentsList: React.FC<AppointmentsListProps> = ({
                     onClick={() => setSelectedDate(item.date)}
                     className={`py-2 px-1 rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer border ${
                       isSelected
-                        ? 'bg-teal-700 text-white border-teal-700 shadow-md ring-2 ring-teal-300'
+                        ? 'bg-gradient-to-b from-teal-700 to-emerald-700 text-white border-teal-700 shadow-md ring-2 ring-emerald-300'
                         : item.hasDoctors
-                        ? 'bg-teal-50/70 border-teal-200 text-slate-800 hover:bg-teal-100'
+                        ? 'bg-emerald-50/90 border-emerald-300 text-emerald-950 font-bold hover:bg-emerald-100'
                         : 'bg-slate-50 border-slate-200 text-slate-400 opacity-70 hover:opacity-100'
                     }`}
                   >
@@ -220,7 +217,7 @@ export const AppointmentsList: React.FC<AppointmentsListProps> = ({
                     {/* Status badge: clearly distinguish availability */}
                     <span className="mt-1 text-[8px] font-bold leading-none">
                       {item.hasDoctors ? (
-                        <span className={`px-1 py-0.2 rounded-full ${isSelected ? 'bg-teal-800 text-teal-100' : 'text-emerald-700'}`}>
+                        <span className={`px-1 py-0.2 rounded-full ${isSelected ? 'bg-teal-900 text-teal-100' : 'text-emerald-700 font-black'}`}>
                           {item.doctorsCount} Docs
                         </span>
                       ) : (
@@ -360,14 +357,14 @@ export const AppointmentsList: React.FC<AppointmentsListProps> = ({
                 addBookingHistoryItem({
                   type: 'doctor',
                   title: 'Doctor OPD Registration',
-                  subtitle: 'Official HealthMeU Portal',
+                  subtitle: 'Doctor OPD Registration',
                   url: doctorBookingUrl,
                 })
               }
               className="py-2.5 px-3 rounded-xl border border-teal-200 bg-teal-50 text-teal-900 font-extrabold text-xs flex items-center justify-center gap-1.5 hover:bg-teal-100 transition-colors cursor-pointer"
             >
               <Stethoscope className="w-3.5 h-3.5 text-teal-700" />
-              <span>Doctor Portal</span>
+              <span>Doctor Booking</span>
               <ExternalLink className="w-2.5 h-2.5 text-slate-400" />
             </a>
 
@@ -379,14 +376,14 @@ export const AppointmentsList: React.FC<AppointmentsListProps> = ({
                 addBookingHistoryItem({
                   type: 'pathology',
                   title: 'Pathology Lab Online Booking',
-                  subtitle: 'Official Lab Portal',
+                  subtitle: 'Pathology Lab Online Booking',
                   url: pathologyBookingUrl,
                 })
               }
               className="py-2.5 px-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-900 font-extrabold text-xs flex items-center justify-center gap-1.5 hover:bg-rose-100 transition-colors cursor-pointer"
             >
               <FlaskConical className="w-3.5 h-3.5 text-rose-700" />
-              <span>Lab Portal</span>
+              <span>Lab Booking</span>
               <ExternalLink className="w-2.5 h-2.5 text-slate-400" />
             </a>
           </div>
@@ -401,7 +398,7 @@ export const AppointmentsList: React.FC<AppointmentsListProps> = ({
               <div className="flex items-center gap-2">
                 <History className="w-3.5 h-3.5 text-teal-700" />
                 <span className="text-xs font-black text-slate-800">
-                  Recent Booking History
+                  Booking History
                 </span>
                 <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-slate-100 text-slate-600">
                   {bookingHistory.length}

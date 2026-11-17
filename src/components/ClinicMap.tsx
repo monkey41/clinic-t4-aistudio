@@ -369,10 +369,10 @@ export const ClinicMap: React.FC<ClinicMapProps> = ({
       <div className="flex items-center justify-between mb-2 px-1">
         <div>
           <h3 className={`font-extrabold text-sm tracking-tight flex items-center gap-1.5 ${p.heading}`}>
-            <span>📍</span> {t.locationTitle || 'Clinic Location & Neighborhood Map'}
+            <span>📍</span> {t.locationTitle || 'Clinic Location'}
           </h3>
           <p className={`text-[11px] font-medium ${p.subtext}`}>
-            Explore surrounding hospital wings, emergency gate & roads
+            Near PRM Medical College, Hospital Square, Baripada
           </p>
         </div>
 
@@ -395,9 +395,9 @@ export const ClinicMap: React.FC<ClinicMapProps> = ({
           <button
             type="button"
             onClick={handleZoomIn}
-            aria-label="Zoom in to view more buildings"
+            aria-label="Zoom in"
             className="w-8 h-8 rounded-xl bg-white hover:bg-slate-50 text-slate-800 shadow-md flex items-center justify-center border border-slate-200 cursor-pointer active:scale-95"
-            title="Zoom in (reveals more buildings & roads)"
+            title="Zoom in"
           >
             <ZoomIn className="w-4 h-4" />
           </button>
@@ -410,19 +410,6 @@ export const ClinicMap: React.FC<ClinicMapProps> = ({
           >
             <ZoomOut className="w-4 h-4" />
           </button>
-        </div>
-
-        {/* Dynamic Zoom Hint Banner */}
-        <div className="absolute top-2.5 left-2.5 z-10 flex flex-col gap-1 pointer-events-none">
-          {currentZoom >= 18 ? (
-            <div className="bg-emerald-900/90 backdrop-blur-md px-2.5 py-1 rounded-lg text-[9px] font-extrabold text-emerald-100 shadow-sm border border-emerald-600/40 animate-in fade-in">
-              ✨ Detailed Buildings & Wards Active
-            </div>
-          ) : (
-            <div className="bg-slate-900/80 backdrop-blur-md px-2.5 py-1 rounded-lg text-[9px] font-bold text-slate-200 shadow-sm">
-              🔍 Tap + to reveal more buildings
-            </div>
-          )}
         </div>
 
         {/* Bottom GPS Bar */}
@@ -463,21 +450,8 @@ export const ClinicMap: React.FC<ClinicMapProps> = ({
           className={`w-full active:scale-98 rounded-2xl py-3 px-4 font-extrabold text-xs flex items-center justify-center gap-2 shadow-md transition-all text-center cursor-pointer ${p.primaryBtn}`}
         >
           <Navigation className="w-4 h-4" />
-          <span>{t.directions || 'GET DIRECTIONS (GPS NAVIGATION) ↗'}</span>
+          <span>Get Directions</span>
         </a>
-      </div>
-
-      {/* Building & Road Guide */}
-      <div className={`mt-2.5 p-3 rounded-2xl border flex items-start gap-2.5 text-xs shadow-2xs ${p.card}`}>
-        <MapPin className={`w-4 h-4 shrink-0 mt-0.5 ${p.accentText}`} />
-        <div className="leading-snug">
-          <span className={`font-extrabold block ${p.heading}`}>
-            Life Care Medicine Store and Poly Clinic (Baripada)
-          </span>
-          <span className={`text-[11px] block mt-0.5 ${p.subtext}`}>
-            Main Hospital Road, opposite PRM Medical College campus & Emergency Gate. Open daily 8:00 AM – 10:00 PM.
-          </span>
-        </div>
       </div>
     </section>
   );

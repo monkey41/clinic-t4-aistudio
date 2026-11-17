@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Doctor,
   Product,
@@ -8,37 +8,39 @@ import {
   PathologyTest,
   ClinicConfig,
   BookingHistoryItem,
+  StoreOrder,
+  CashTransaction,
 } from '../types';
 import {
   getDoctors,
   saveDoctors,
-  DEFAULT_DOCTORS,
   DEFAULT_MALE_DOCTOR_PHOTO,
   DEFAULT_FEMALE_DOCTOR_PHOTO,
   getProducts,
   saveProducts,
-  DEFAULT_PRODUCTS,
   getPathologyTests,
   savePathologyTests,
-  DEFAULT_PATHOLOGY_TESTS,
   getSpecialOffers,
   saveSpecialOffers,
-  DEFAULT_SPECIAL_OFFERS,
   getUnannouncedArrivals,
   saveUnannouncedArrivals,
-  DEFAULT_UNANNOUNCED_ARRIVALS,
   getClinicNotifications,
   saveClinicNotifications,
   getClinicConfig,
   saveClinicConfig,
-  DEFAULT_CLINIC_CONFIG,
   getBookingHistory,
   clearBookingHistory,
+  getStoreOrders,
+  saveStoreOrders,
+  addStoreOrder,
+  getCashTransactions,
+  saveCashTransactions,
+  addCashTransaction,
+  isSameLocalDate,
   resetAllToFactoryDefaults,
 } from '../data/clinicData';
 import {
   Shield,
-  KeyRound,
   Users,
   Bell,
   Sparkles,
@@ -62,7 +64,6 @@ import {
   EyeOff,
   CheckCircle2,
   AlertCircle,
-  ExternalLink,
   Mail,
   Loader2,
   LogOut,
@@ -71,13 +72,19 @@ import {
   ShieldCheck,
   Laptop,
   Monitor,
-  Smartphone,
   UserPlus,
   Power,
   RefreshCw,
   Megaphone,
-  Radio,
   Send,
+  LayoutDashboard,
+  Camera,
+  IndianRupee,
+  TrendingUp,
+  TrendingDown,
+  ShoppingBag,
+  KeyRound,
+  Wallet,
 } from 'lucide-react';
 import {
   getFirebaseAuth,
@@ -99,11 +106,21 @@ import {
   deleteNotificationFromFirestore,
   syncArrivalToFirestore,
   deleteArrivalFromFirestore,
+  syncDoctorsToFirestore,
+  fetchAdminOrdersFromFirestore,
+  syncAdminOrdersToFirestore,
+  fetchTransactionsFromFirestore,
+  syncTransactionsToFirestore,
+  validateStrongPassword,
+  sendAdminPasswordReset,
+  updateAdminPassword,
+  getReadableDeviceLabel,
 } from '../services/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 
 interface AdminPortalProps {
   onBackToApp: () => void;
+  onEnterPreview?: () => void;
 }
 
 type AdminTab =
@@ -117,11 +134,46 @@ type AdminTab =
   | 'logs'
   | 'admins';
 
-export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
+// Resize & compress uploaded doctor portrait so it syncs reliably via Firestore & localStorage
+function compressDoctorImageFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read selected image.'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Invalid image file.'));
+      img.onload = () => {
+        const maxSize = 360;
+        let width = img.width;
+        let height = img.height;
+        if (width > height && width > maxSize) {
+          height = Math.round((height * maxSize) / width);
+          width = maxSize;
+        } else if (height > maxSize) {
+          width = Math.round((width * maxSize) / height);
+          height = maxSize;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(reader.result as string);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.82));
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPreview }) => {
   // Authentication & Authorization State
   const [adminUser, setAdminUser] = useState<User | null>(null);
   const [adminEmail, setAdminEmail] = useState<string>('prayaspratikmohanty41@gmail.com');
-  // Always start as unauthenticated so returning from history or dismissing page requires credentials
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [authChecking, setAuthChecking] = useState<boolean>(false);
   const [isSigningIn, setIsSigningIn] = useState<boolean>(false);
@@ -133,8 +185,23 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
   const [firebaseActive, setFirebaseActive] = useState<boolean>(false);
   const [testingFirebase, setTestingFirebase] = useState<boolean>(false);
 
+  // Forgot Password & Change Strong Password State
+  const [forgotMode, setForgotMode] = useState<boolean>(false);
+  const [resetEmail, setResetEmail] = useState<string>('');
+  const [isSendingReset, setIsSendingReset] = useState<boolean>(false);
+  const [resetFeedback, setResetFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [weakPasswordBanner, setWeakPasswordBanner] = useState<boolean>(false);
+
+  const [pwdModalOpen, setPwdModalOpen] = useState<boolean>(false);
+  const [currentPwd, setCurrentPwd] = useState<string>('');
+  const [newStrongPwd, setNewStrongPwd] = useState<string>('');
+  const [confirmStrongPwd, setConfirmStrongPwd] = useState<string>('');
+  const [isUpdatingPwd, setIsUpdatingPwd] = useState<boolean>(false);
+  const [pwdFeedback, setPwdFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
+
   // Single-machine session tracking
   const [activeSessionId, setActiveSessionId] = useState<string>('');
+  const currentDeviceLabel = useMemo(() => getReadableDeviceLabel(), []);
 
   // Admin Team Management State
   const [adminList, setAdminList] = useState<AdminProfile[]>([]);
@@ -145,8 +212,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
   const [newAdminRole, setNewAdminRole] = useState<'Super Admin' | 'Clinic Admin' | 'Store Admin' | 'Staff'>('Clinic Admin');
   const [isSavingAdmin, setIsSavingAdmin] = useState<boolean>(false);
 
-  // Active Admin Sub-Tab
-  const [activeTab, setActiveTab] = useState<AdminTab>('doctors');
+  // Active Admin Sub-Tab (Whole-Day Operations Dashboard first)
+  const [activeTab, setActiveTab] = useState<AdminTab>('overview');
+  const [dashboardScope, setDashboardScope] = useState<'today' | 'all'>('today');
 
   // Local Reactive State for Entities
   const [doctors, setDoctors] = useState<Doctor[]>(() => getDoctors());
@@ -161,6 +229,34 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
   const [pathologyTests, setPathologyTests] = useState<PathologyTest[]>(() => getPathologyTests());
   const [clinicConfig, setClinicConfig] = useState<ClinicConfig>(() => getClinicConfig());
   const [bookingHistory, setBookingHistory] = useState<BookingHistoryItem[]>(() => getBookingHistory());
+  const [storeOrders, setStoreOrders] = useState<StoreOrder[]>(() => getStoreOrders());
+  const [cashTransactions, setCashTransactions] = useState<CashTransaction[]>(() =>
+    getCashTransactions()
+  );
+
+  // Ledger / Walk-in Order Modal States
+  const [txModalOpen, setTxModalOpen] = useState(false);
+  const [txForm, setTxForm] = useState<{
+    type: 'in' | 'out';
+    category: string;
+    amount: string;
+    paymentMode: 'Cash' | 'UPI' | 'Card';
+    note: string;
+  }>({
+    type: 'in',
+    category: 'Medicine Sale',
+    amount: '',
+    paymentMode: 'Cash',
+    note: '',
+  });
+  const [walkinOrderModalOpen, setWalkinOrderModalOpen] = useState(false);
+  const [walkinOrderForm, setWalkinOrderForm] = useState({
+    customerName: '',
+    customerPhone: '',
+    itemSummary: '',
+    totalAmount: '',
+    paid: true,
+  });
 
   // Toast / Status Message
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -180,6 +276,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
     setPathologyTests(getPathologyTests());
     setClinicConfig(getClinicConfig());
     setBookingHistory(getBookingHistory());
+    setStoreOrders(getStoreOrders());
+    setCashTransactions(getCashTransactions());
   };
 
   useEffect(() => {
@@ -188,7 +286,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
     return () => window.removeEventListener('clinic-data-updated', handleUpdate);
   }, []);
 
-  // Fetch admin team directory
+  // Fetch admin team directory & cloud orders/ledger
   const loadAdmins = async () => {
     setLoadingAdmins(true);
     try {
@@ -201,9 +299,41 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
     }
   };
 
+  const syncOperationsFromCloud = async () => {
+    try {
+      const [cloudOrders, cloudTxs] = await Promise.all([
+        fetchAdminOrdersFromFirestore(),
+        fetchTransactionsFromFirestore(),
+      ]);
+      if (cloudOrders && cloudOrders.length > 0) {
+        const local = getStoreOrders();
+        const merged = new Map<string, StoreOrder>();
+        [...local, ...cloudOrders].forEach((o) => merged.set(o.id, o));
+        const list = Array.from(merged.values()).sort(
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+        saveStoreOrders(list);
+        setStoreOrders(list);
+      }
+      if (cloudTxs && cloudTxs.length > 0) {
+        const localTx = getCashTransactions();
+        const mergedTx = new Map<string, CashTransaction>();
+        [...localTx, ...cloudTxs].forEach((t) => mergedTx.set(t.id, t));
+        const listTx = Array.from(mergedTx.values()).sort(
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+        saveCashTransactions(listTx);
+        setCashTransactions(listTx);
+      }
+    } catch {
+      // ignore offline
+    }
+  };
+
   useEffect(() => {
     if (isAuthenticated) {
       loadAdmins();
+      syncOperationsFromCloud();
     }
   }, [isAuthenticated]);
 
@@ -290,13 +420,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
     setSessionWarning(null);
 
     if (!emailInput.trim()) {
-      setAuthError('Please enter your admin email address.');
+      setAuthError('Enter your admin email address.');
       return;
     }
     if (!passwordInput) {
-      setAuthError('Please enter your password.');
+      setAuthError('Enter your password.');
       return;
     }
+
+    const strength = validateStrongPassword(passwordInput);
 
     setIsSigningIn(true);
     try {
@@ -306,16 +438,16 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
           setAdminUser(result.user);
           setAdminEmail(result.user.email || emailInput.trim());
           setIsAuthenticated(true);
+          setWeakPasswordBanner(!strength.valid);
 
-          // Enforce single-machine session tracking
+          // Enforce single-machine/phone session lock
           const newSessId = await registerAdminSession(result.user);
           setActiveSessionId(newSessId);
-          showToast('Logged in as verified administrator (Single machine lock active)');
+          showToast(`Signed in (${currentDeviceLabel})`);
         } else {
           setAuthError(result.error || 'Invalid credentials or unauthorized account.');
         }
       } else {
-        // Demo / local preview mode when VITE_FIREBASE_* is pending deployment in Cloudflare
         const normalized = emailInput.trim().toLowerCase();
         const allowedAdmins = [
           'prayaspratikmohanty41@gmail.com',
@@ -323,22 +455,56 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
           'admin@lifecarepharmacy.com',
           ...adminList.map((a) => a.email.toLowerCase()),
         ];
-        if (allowedAdmins.includes(normalized) && passwordInput.length >= 6) {
+        if (!allowedAdmins.includes(normalized)) {
+          setAuthError('Unauthorized admin email.');
+        } else if (!strength.valid) {
+          setAuthError(`Strong password required — ${strength.message}`);
+        } else {
           setIsAuthenticated(true);
           setAdminEmail(emailInput.trim());
           const fallbackSess = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
           setActiveSessionId(fallbackSess);
-          showToast('Admin session active. Single-session lock engaged.');
-        } else {
-          setAuthError(
-            'Unauthorized: Only designated admin accounts (e.g. prayaspratikmohanty41@gmail.com) with 6+ character passwords can sign in.'
-          );
+          showToast('Signed in (Single-device lock active)');
         }
       }
     } catch (err: any) {
-      setAuthError(err.message || 'Authentication failed. Please verify credentials.');
+      setAuthError(err.message || 'Authentication failed.');
     } finally {
       setIsSigningIn(false);
+    }
+  };
+
+  const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSendingReset(true);
+    setResetFeedback(null);
+    const res = await sendAdminPasswordReset(resetEmail || emailInput);
+    setResetFeedback({ ok: res.success, msg: res.message });
+    setIsSendingReset(false);
+  };
+
+  const handleUpdateStrongPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPwdFeedback(null);
+    if (newStrongPwd !== confirmStrongPwd) {
+      setPwdFeedback({ ok: false, msg: 'Passwords do not match.' });
+      return;
+    }
+    const check = validateStrongPassword(newStrongPwd);
+    if (!check.valid) {
+      setPwdFeedback({ ok: false, msg: `Password too weak (${check.message})` });
+      return;
+    }
+    setIsUpdatingPwd(true);
+    const res = await updateAdminPassword(currentPwd, newStrongPwd);
+    setPwdFeedback({ ok: res.success, msg: res.message });
+    setIsUpdatingPwd(false);
+    if (res.success) {
+      setWeakPasswordBanner(false);
+      setCurrentPwd('');
+      setNewStrongPwd('');
+      setConfirmStrongPwd('');
+      setTimeout(() => setPwdModalOpen(false), 1200);
     }
   };
 
@@ -506,7 +672,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
     setDoctorModalOpen(true);
   };
 
-  const handleSaveDoctor = (e: React.FormEvent) => {
+  const handleSaveDoctor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!doctorForm.name.trim()) return;
 
@@ -522,23 +688,56 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
     setDoctors(updated);
     saveDoctors(updated);
     setDoctorModalOpen(false);
-    showToast(editingDoctor ? 'Doctor details updated!' : 'New doctor added successfully!');
+    await syncDoctorsToFirestore(updated);
+    showToast(editingDoctor ? 'Doctor updated across devices!' : 'Doctor added across devices!');
   };
 
-  const handleDeleteDoctor = (id: string, name: string) => {
-    if (window.confirm(`Are you sure you want to remove ${name}?`)) {
+  const handleQuickDoctorPhotoUpload = async (
+    doctorId: string,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await compressDoctorImageFile(file);
+      const updated = doctors.map((d) => (d.id === doctorId ? { ...d, photo: dataUrl } : d));
+      setDoctors(updated);
+      saveDoctors(updated);
+      await syncDoctorsToFirestore(updated);
+      showToast('Doctor photo updated & synced!');
+    } catch {
+      showToast('Could not process image file.');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleModalDoctorPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await compressDoctorImageFile(file);
+      setDoctorForm((prev) => ({ ...prev, photo: dataUrl }));
+      showToast('Photo loaded! Click Save Doctor to publish.');
+    } catch {
+      showToast('Could not read image.');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleDeleteDoctor = async (id: string, name: string) => {
+    if (window.confirm(`Remove ${name}?`)) {
       const updated = doctors.filter((d) => d.id !== id);
       setDoctors(updated);
       saveDoctors(updated);
+      await syncDoctorsToFirestore(updated);
       showToast('Doctor removed.');
     }
   };
 
   // ----------------------------------------------------------------------
-  // Doctor Arrival Alerts
-  // ----------------------------------------------------------------------
-  // ----------------------------------------------------------------------
-  // Doctor Arrival Alerts (Syncs with Cloud Firestore & Customer Phones)
+  // Doctor Arrival Alerts (Syncs with Cloud & Broadcasts Customer Notification)
   // ----------------------------------------------------------------------
   const [arrivalModalOpen, setArrivalModalOpen] = useState(false);
   const [isSavingArrival, setIsSavingArrival] = useState(false);
@@ -564,7 +763,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
       photo: firstDoc ? firstDoc.photo : DEFAULT_MALE_DOCTOR_PHOTO,
       date: new Date().toISOString().split('T')[0],
       timing: 'Today • 04:00 PM - 07:00 PM',
-      note: 'Special unscheduled consultation slots open today.',
+      note: 'Special OPD consultation slots open today.',
       sentByAdminAt: 'Today',
     });
     setArrivalModalOpen(true);
@@ -589,7 +788,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
     if (!arrivalForm.doctorName) return;
 
     setIsSavingArrival(true);
-    const dateStr = arrivalForm.date || new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    const dateStr = arrivalForm.date || todayStr;
     const day = parseInt(dateStr.split('-')[2] || '1', 10);
 
     const newArrival: DoctorArrival = {
@@ -607,16 +808,43 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
       sentByAdminAt: arrivalForm.sentByAdminAt || 'Today',
     };
 
-    const updated = [newArrival, ...unannouncedArrivals];
-    setUnannouncedArrivals(updated);
-    saveUnannouncedArrivals(updated);
+    const updatedArrivals = [newArrival, ...unannouncedArrivals];
+    setUnannouncedArrivals(updatedArrivals);
+    saveUnannouncedArrivals(updatedArrivals);
+
+    // ALSO send as a live Clinic Notification so customer phones & notification bell receive it!
+    const timeFormatted = now.toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+    const cleanName = newArrival.doctorName.replace(/^dr\.?\s*/i, '');
+    const visitNotice: ClinicNotification = {
+      id: `notif-visit-${Date.now()}`,
+      title: `Dr. ${cleanName} Visiting ${dateStr === todayStr ? 'Today' : dateStr}`,
+      message: `${newArrival.specialty} • ${newArrival.timing}${newArrival.note ? ' — ' + newArrival.note : ''}`,
+      type: 'alert',
+      category: 'Doctor Visit',
+      badge: 'Doctor Visit',
+      actionLabel: 'Book OPD',
+      actionUrl: 'appointments',
+      active: true,
+      createdAt: now.toISOString(),
+      sentByAdminAt: `${timeFormatted}, ${arrivalForm.sentByAdminAt || 'Today'}`,
+    };
+    const updatedNotifs = [visitNotice, ...notifications];
+    setNotifications(updatedNotifs);
+    saveClinicNotifications(updatedNotifs);
 
     try {
-      await syncArrivalToFirestore(newArrival, updated);
-      showToast('Doctor arrival alert synced live to customer phones!');
+      await Promise.all([
+        syncArrivalToFirestore(newArrival, updatedArrivals),
+        syncNotificationToFirestore(visitNotice, updatedNotifs),
+      ]);
+      showToast('Doctor visit alert & customer notification sent!');
     } catch (err) {
       console.warn('Arrival Firestore sync error:', err);
-      showToast('Arrival alert saved locally.');
+      showToast('Doctor alert saved locally.');
     } finally {
       setIsSavingArrival(false);
       setArrivalModalOpen(false);
@@ -629,10 +857,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
     saveUnannouncedArrivals(updated);
     try {
       await deleteArrivalFromFirestore(id, updated);
-      showToast('Alert removed from all devices.');
-    } catch (err) {
-      console.warn('Arrival Firestore delete error:', err);
-      showToast('Alert removed locally.');
+      showToast('Visit alert removed.');
+    } catch {
+      showToast('Visit alert removed locally.');
     }
   };
 
@@ -1053,29 +1280,172 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
   };
 
   // ----------------------------------------------------------------------
+  // Daily Operations Ledger & Order Actions
+  // ----------------------------------------------------------------------
+  const handleToggleOrderPaid = async (order: StoreOrder) => {
+    const nextPaid: 'Paid' | 'Pending' = order.paymentStatus === 'Paid' ? 'Pending' : 'Paid';
+    const updatedOrders = storeOrders.map((o) =>
+      o.id === order.id ? { ...o, paymentStatus: nextPaid } : o
+    );
+    setStoreOrders(updatedOrders);
+    saveStoreOrders(updatedOrders);
+    syncAdminOrdersToFirestore(updatedOrders).catch(() => {});
+
+    if (nextPaid === 'Paid' && order.totalAmount > 0) {
+      const tx = addCashTransaction({
+        type: 'in',
+        category: 'Medicine Sale',
+        amount: order.totalAmount,
+        paymentMode: 'Cash',
+        note: `Order: ${order.customerName}`,
+      });
+      const updatedTxs = [tx, ...cashTransactions];
+      setCashTransactions(updatedTxs);
+      syncTransactionsToFirestore(updatedTxs).catch(() => {});
+      showToast(`₹${order.totalAmount} recorded in Money In`);
+    }
+  };
+
+  const handleCycleOrderStatus = (order: StoreOrder) => {
+    const next: StoreOrder['orderStatus'] =
+      order.orderStatus === 'New'
+        ? 'Packed'
+        : order.orderStatus === 'Packed'
+        ? 'Delivered'
+        : 'New';
+    const updated = storeOrders.map((o) =>
+      o.id === order.id ? { ...o, orderStatus: next } : o
+    );
+    setStoreOrders(updated);
+    saveStoreOrders(updated);
+    syncAdminOrdersToFirestore(updated).catch(() => {});
+  };
+
+  const handleSaveCashTransaction = (e: React.FormEvent) => {
+    e.preventDefault();
+    const amt = Number(txForm.amount);
+    if (!amt || amt <= 0) return;
+
+    const tx = addCashTransaction({
+      type: txForm.type,
+      category: txForm.category,
+      amount: amt,
+      paymentMode: txForm.paymentMode,
+      note: txForm.note.trim() || txForm.category,
+    });
+    const updated = [tx, ...cashTransactions];
+    setCashTransactions(updated);
+    syncTransactionsToFirestore(updated).catch(() => {});
+    setTxModalOpen(false);
+    setTxForm({ type: 'in', category: 'Medicine Sale', amount: '', paymentMode: 'Cash', note: '' });
+    showToast(`${tx.type === 'in' ? 'Money In' : 'Money Out'} ₹${amt} saved`);
+  };
+
+  const handleDeleteCashTransaction = (id: string) => {
+    const updated = cashTransactions.filter((t) => t.id !== id);
+    setCashTransactions(updated);
+    saveCashTransactions(updated);
+    syncTransactionsToFirestore(updated).catch(() => {});
+  };
+
+  const handleSaveWalkinOrder = (e: React.FormEvent) => {
+    e.preventDefault();
+    const amt = Number(walkinOrderForm.totalAmount) || 0;
+    const order = addStoreOrder({
+      customerName: walkinOrderForm.customerName.trim() || 'Walk-in Patient',
+      customerPhone: walkinOrderForm.customerPhone.trim() || 'Counter',
+      items: [
+        {
+          name: walkinOrderForm.itemSummary.trim() || 'Counter Medicine Bill',
+          quantity: 1,
+          price: amt,
+        },
+      ],
+      totalAmount: amt,
+      source: 'walk-in',
+      paymentStatus: walkinOrderForm.paid ? 'Paid' : 'Pending',
+      orderStatus: 'Delivered',
+    });
+    const updatedOrders = [order, ...storeOrders];
+    setStoreOrders(updatedOrders);
+    syncAdminOrdersToFirestore(updatedOrders).catch(() => {});
+
+    if (walkinOrderForm.paid && amt > 0) {
+      const tx = addCashTransaction({
+        type: 'in',
+        category: 'Medicine Sale',
+        amount: amt,
+        paymentMode: 'Cash',
+        note: `Walk-in: ${order.customerName}`,
+      });
+      const updatedTxs = [tx, ...cashTransactions];
+      setCashTransactions(updatedTxs);
+      syncTransactionsToFirestore(updatedTxs).catch(() => {});
+    }
+
+    setWalkinOrderModalOpen(false);
+    setWalkinOrderForm({
+      customerName: '',
+      customerPhone: '',
+      itemSummary: '',
+      totalAmount: '',
+      paid: true,
+    });
+    showToast('Order logged to daily dashboard');
+  };
+
+  // Filtered daily dashboard data
+  const scopedOrders = useMemo(() => {
+    if (dashboardScope === 'all') return storeOrders;
+    return storeOrders.filter((o) => isSameLocalDate(o.createdAt));
+  }, [storeOrders, dashboardScope]);
+
+  const scopedTransactions = useMemo(() => {
+    if (dashboardScope === 'all') return cashTransactions;
+    return cashTransactions.filter((t) => isSameLocalDate(t.createdAt));
+  }, [cashTransactions, dashboardScope]);
+
+  const scopedBookings = useMemo(() => {
+    if (dashboardScope === 'all') return bookingHistory;
+    const todayPrefix = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+    return bookingHistory.filter((b) => b.dateLabel.includes(todayPrefix));
+  }, [bookingHistory, dashboardScope]);
+
+  const totalMoneyIn = useMemo(
+    () => scopedTransactions.filter((t) => t.type === 'in').reduce((s, t) => s + t.amount, 0),
+    [scopedTransactions]
+  );
+
+  const totalMoneyOut = useMemo(
+    () => scopedTransactions.filter((t) => t.type === 'out').reduce((s, t) => s + t.amount, 0),
+    [scopedTransactions]
+  );
+
+  // ----------------------------------------------------------------------
   // If Checking Auth State -> Show Loading Spinner
   // ----------------------------------------------------------------------
   if (authChecking) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="bg-white rounded-3xl shadow-xl border border-slate-200 p-8 text-center space-y-4 max-w-sm w-full">
+        <div className="bg-white rounded-3xl shadow-xl border border-slate-200 p-8 text-center space-y-3 max-w-sm w-full">
           <div className="w-12 h-12 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center mx-auto animate-spin">
             <Loader2 className="w-6 h-6" />
           </div>
-          <p className="text-sm font-bold text-slate-700">Verifying Admin Authorization...</p>
-          <p className="text-xs text-slate-400">Connecting to Firebase Auth & checking permissions</p>
+          <p className="text-sm font-bold text-slate-700">Verifying Admin Session...</p>
         </div>
       </div>
     );
   }
 
   // ----------------------------------------------------------------------
-  // If Not Authenticated -> Show Secure Firebase Email & Password Gate
+  // If Not Authenticated -> Show Clean Sign-In & Forgot Password Gate
   // ----------------------------------------------------------------------
   if (!isAuthenticated) {
+    const loginPwdStrength = validateStrongPassword(passwordInput);
+
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 p-6 sm:p-8 space-y-6">
+      <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-slate-50 via-teal-50/40 to-emerald-50/40">
+        <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 p-6 sm:p-8 space-y-5">
           <div className="flex items-center justify-between">
             <button
               type="button"
@@ -1087,115 +1457,202 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
             </button>
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-teal-50 border border-teal-200 text-teal-800 text-[11px] font-bold">
               <Shield className="w-3.5 h-3.5" />
-              <span>Admin Access</span>
+              <span>1-Device Lock</span>
             </div>
           </div>
 
-          <div className="text-center space-y-2">
-            <div className="w-16 h-16 mx-auto rounded-2xl bg-white border border-slate-200 p-1 flex items-center justify-center shadow-md">
+          <div className="text-center space-y-1.5">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-white border border-slate-200 p-1 flex items-center justify-center shadow-md">
               <img
                 src="/logo.png"
-                alt="Life Care Pharmacy & Poly Clinic"
+                alt="Life Care Admin"
                 className="w-full h-full object-contain"
               />
             </div>
-            <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-              Life Care Pharmacy Admin
+            <h2 className="text-xl font-black text-slate-900 tracking-tight">
+              {forgotMode ? 'Reset Admin Password' : 'Life Care Admin'}
             </h2>
-            <p className="text-xs text-slate-500 max-w-xs mx-auto leading-relaxed">
-              Sign in with your verified administrator credentials to manage products, pricing, doctors, and clinic operations.
-            </p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Admin Email Address
-              </label>
-              <div className="relative">
-                <input
-                  type="email"
-                  required
-                  placeholder="admin@lifecare.com"
-                  value={emailInput}
-                  onChange={(e) => setEmailInput(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-300 text-slate-900 font-medium text-sm focus:outline-teal-600 placeholder:text-slate-400"
-                />
-                <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Password
-              </label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  placeholder="••••••••••••"
-                  value={passwordInput}
-                  onChange={(e) => setPasswordInput(e.target.value)}
-                  className="w-full pl-10 pr-10 py-3 rounded-xl border border-slate-300 text-slate-900 font-medium text-sm focus:outline-teal-600 placeholder:text-slate-400"
-                />
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-600 cursor-pointer"
-                  title={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-
-            {authError && (
-              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span className="leading-tight">{authError}</span>
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={isSigningIn}
-              className="w-full py-3 px-4 rounded-xl bg-teal-700 hover:bg-teal-800 disabled:opacity-70 text-white font-extrabold text-sm shadow-md transition-all active:scale-98 cursor-pointer flex items-center justify-center gap-2"
-            >
-              {isSigningIn ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Verifying Credentials...</span>
-                </>
-              ) : (
-                <>
-                  <Unlock className="w-4 h-4" />
-                  <span>Sign In to Admin Portal</span>
-                </>
-              )}
-            </button>
-          </form>
-
-          {/* Security & Authorization Disclosure */}
-          <div className="pt-3 border-t border-slate-100 space-y-2">
-            <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600">
-              <Shield className="w-3.5 h-3.5 text-teal-700" />
-              <span>Role-Based Access Control (RBAC)</span>
-            </div>
-            <p className="text-[11px] text-slate-500 leading-normal">
-              Admin operations and database writes are strictly protected by Firebase Security Rules. Merely signing up does not grant admin access; only verified accounts in the admin allowlist or Firestore <code className="text-[10px] bg-slate-100 px-1 py-0.5 rounded">/admins</code> collection are authorized.
-            </p>
-            {!firebaseActive && (
-              <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[11px] space-y-1">
-                <div className="font-bold flex items-center gap-1">
-                  <span>⚙️ Cloudflare Environment Notice:</span>
+          {forgotMode ? (
+            <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Registered Admin Email
+                </label>
+                <div className="relative">
+                  <input
+                    type="email"
+                    required
+                    placeholder="admin@lifecare.com"
+                    value={resetEmail || emailInput}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-300 text-slate-900 font-medium text-sm focus:outline-teal-600"
+                  />
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
                 </div>
-                <p>
-                  To connect live Firebase Auth, set <code className="font-mono text-[10px] bg-amber-100 px-1">VITE_FIREBASE_*</code> in your Cloudflare Pages Settings or <code className="font-mono text-[10px] bg-amber-100 px-1">.env</code>. You can also sign in with your designated admin email: <strong className="underline">prayaspratikmohanty41@gmail.com</strong>.
-                </p>
               </div>
-            )}
-          </div>
+
+              {resetFeedback && (
+                <div
+                  className={`p-3 rounded-xl border text-xs font-semibold flex items-start gap-2 ${
+                    resetFeedback.ok
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : 'bg-rose-50 border-rose-200 text-rose-700'
+                  }`}
+                >
+                  {resetFeedback.ok ? (
+                    <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  )}
+                  <span>{resetFeedback.msg}</span>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isSendingReset}
+                className="w-full py-3 px-4 rounded-xl bg-teal-700 hover:bg-teal-800 disabled:opacity-70 text-white font-extrabold text-sm shadow-md cursor-pointer flex items-center justify-center gap-2"
+              >
+                {isSendingReset ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                <span>{isSendingReset ? 'Sending...' : 'Send Reset Link'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setForgotMode(false);
+                  setResetFeedback(null);
+                }}
+                className="w-full text-xs font-bold text-teal-700 hover:underline cursor-pointer text-center"
+              >
+                ← Back to Sign In
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Admin Email
+                </label>
+                <div className="relative">
+                  <input
+                    type="email"
+                    required
+                    placeholder="admin@lifecare.com"
+                    value={emailInput}
+                    onChange={(e) => setEmailInput(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-300 text-slate-900 font-medium text-sm focus:outline-teal-600 placeholder:text-slate-400"
+                  />
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Password
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setResetEmail(emailInput);
+                      setForgotMode(true);
+                      setAuthError('');
+                    }}
+                    className="text-[11px] font-bold text-teal-700 hover:underline cursor-pointer"
+                  >
+                    Forgot Password?
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    placeholder="••••••••••••"
+                    value={passwordInput}
+                    onChange={(e) => setPasswordInput(e.target.value)}
+                    className="w-full pl-10 pr-10 py-3 rounded-xl border border-slate-300 text-slate-900 font-medium text-sm focus:outline-teal-600 placeholder:text-slate-400"
+                  />
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+
+                {/* Live Password Strength Indicator */}
+                {passwordInput.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    <div className="flex items-center gap-1">
+                      {[1, 2, 3, 4, 5].map((bar) => (
+                        <div
+                          key={bar}
+                          className={`h-1 flex-1 rounded-full transition-colors ${
+                            bar <= loginPwdStrength.score
+                              ? loginPwdStrength.score >= 5
+                                ? 'bg-emerald-500'
+                                : loginPwdStrength.score >= 3
+                                ? 'bg-amber-500'
+                                : 'bg-rose-500'
+                              : 'bg-slate-200'
+                          }`}
+                        />
+                      ))}
+                      <span
+                        className={`text-[10px] font-extrabold ml-1 ${
+                          loginPwdStrength.score >= 5
+                            ? 'text-emerald-700'
+                            : loginPwdStrength.score >= 3
+                            ? 'text-amber-700'
+                            : 'text-rose-600'
+                        }`}
+                      >
+                        {loginPwdStrength.label}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {sessionWarning && !authError && (
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{sessionWarning}</span>
+                </div>
+              )}
+
+              {authError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span className="leading-tight">{authError}</span>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isSigningIn}
+                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-teal-700 to-emerald-700 hover:from-teal-800 hover:to-emerald-800 disabled:opacity-70 text-white font-extrabold text-sm shadow-md transition-all active:scale-98 cursor-pointer flex items-center justify-center gap-2"
+              >
+                {isSigningIn ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Signing In...</span>
+                  </>
+                ) : (
+                  <>
+                    <Unlock className="w-4 h-4" />
+                    <span>Sign In</span>
+                  </>
+                )}
+              </button>
+            </form>
+          )}
         </div>
       </div>
     );
@@ -1253,18 +1710,24 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
           <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
-              onClick={handleBackToApp}
-              className="text-xs font-bold text-teal-700 bg-teal-50 border border-teal-200 px-2 py-1.5 rounded-xl hover:bg-teal-100 transition-colors cursor-pointer flex items-center gap-1"
-              title="View Customer App"
+              onClick={() => {
+                if (onEnterPreview) {
+                  onEnterPreview();
+                } else {
+                  handleBackToApp();
+                }
+              }}
+              className="text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-1.5 rounded-xl hover:bg-indigo-100 transition-colors cursor-pointer flex items-center gap-1"
+              title="Preview Customer App"
             >
               <Eye className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Store</span>
+              <span>Preview</span>
             </button>
             <button
               type="button"
               onClick={handleLogout}
               className="text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 px-2 py-1.5 rounded-xl hover:bg-rose-100 transition-colors cursor-pointer flex items-center gap-1"
-              title="Sign Out from Admin"
+              title="Sign Out"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span>Log Out</span>
@@ -1272,8 +1735,40 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
           </div>
         </div>
 
+        {/* Weak Password Upgrade Prompt if signed in with a legacy weak password */}
+        {weakPasswordBanner && firebaseActive && (
+          <div className="max-w-xl mx-auto mt-2.5 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-2 text-xs">
+            <span className="font-bold text-amber-900">
+              Upgrade to a strong password (8+ chars, A-Z, 0-9, symbol)
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setPwdFeedback(null);
+                setPwdModalOpen(true);
+              }}
+              className="px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-black text-[11px] cursor-pointer shrink-0"
+            >
+              Set Strong Password
+            </button>
+          </div>
+        )}
+
         {/* Admin Tabs Navigation Bar */}
-        <div className="max-w-xl mx-auto mt-3 flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none">
+        <div className="max-w-xl mx-auto mt-3 flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+          <button
+            type="button"
+            onClick={() => setActiveTab('overview')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              activeTab === 'overview'
+                ? 'bg-gradient-to-r from-indigo-600 to-teal-600 text-white shadow-xs'
+                : 'bg-indigo-50 text-indigo-800 hover:bg-indigo-100'
+            }`}
+          >
+            <LayoutDashboard className="w-3.5 h-3.5" />
+            <span>Today</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setActiveTab('doctors')}
@@ -1297,7 +1792,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
             }`}
           >
             <Bell className="w-3.5 h-3.5" />
-            <span>Notifications ({notifications.length + unannouncedArrivals.length})</span>
+            <span>Alerts ({notifications.length})</span>
           </button>
 
           <button
@@ -1349,7 +1844,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
             }`}
           >
             <Settings className="w-3.5 h-3.5" />
-            <span>Clinic Info</span>
+            <span>Clinic</span>
           </button>
 
           <button
@@ -1362,7 +1857,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
             }`}
           >
             <History className="w-3.5 h-3.5" />
-            <span>Logs ({bookingHistory.length})</span>
+            <span>Bookings ({bookingHistory.length})</span>
           </button>
 
           <button
@@ -1375,7 +1870,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
             }`}
           >
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Admins & Security ({adminList.length})</span>
+            <span>Security</span>
           </button>
         </div>
       </div>
@@ -1383,19 +1878,303 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
       {/* Main Admin Content Body */}
       <div className="max-w-xl mx-auto p-4 space-y-4">
         {/* ================================================================ */}
-        {/* TAB 1: DOCTORS MANAGER                                           */}
+        {/* TAB 0: WHOLE-DAY OPERATIONS DASHBOARD                            */}
+        {/* ================================================================ */}
+        {activeTab === 'overview' && (
+          <div className="space-y-4 animate-in fade-in">
+            {/* Header & Scope Toggle */}
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h3 className="font-black text-base text-slate-900 flex items-center gap-1.5">
+                  <LayoutDashboard className="w-4 h-4 text-indigo-600" />
+                  <span>Daily Operations</span>
+                </h3>
+              </div>
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setDashboardScope('today')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer ${
+                    dashboardScope === 'today'
+                      ? 'bg-white text-teal-800 shadow-2xs'
+                      : 'text-slate-600'
+                  }`}
+                >
+                  Today
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDashboardScope('all')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer ${
+                    dashboardScope === 'all'
+                      ? 'bg-white text-teal-800 shadow-2xs'
+                      : 'text-slate-600'
+                  }`}
+                >
+                  All Time
+                </button>
+              </div>
+            </div>
+
+            {/* 4 Colorful Summary KPI Cards */}
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="rounded-2xl p-3.5 bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-sm">
+                <div className="flex items-center justify-between text-[11px] font-bold text-emerald-100">
+                  <span>Money In</span>
+                  <TrendingUp className="w-4 h-4" />
+                </div>
+                <p className="text-xl font-black mt-1">₹{totalMoneyIn.toLocaleString('en-IN')}</p>
+              </div>
+
+              <div className="rounded-2xl p-3.5 bg-gradient-to-br from-rose-500 to-pink-600 text-white shadow-sm">
+                <div className="flex items-center justify-between text-[11px] font-bold text-rose-100">
+                  <span>Money Out</span>
+                  <TrendingDown className="w-4 h-4" />
+                </div>
+                <p className="text-xl font-black mt-1">₹{totalMoneyOut.toLocaleString('en-IN')}</p>
+              </div>
+
+              <div className="rounded-2xl p-3.5 bg-gradient-to-br from-indigo-600 to-blue-700 text-white shadow-sm">
+                <div className="flex items-center justify-between text-[11px] font-bold text-indigo-100">
+                  <span>Net Balance</span>
+                  <Wallet className="w-4 h-4" />
+                </div>
+                <p className="text-xl font-black mt-1">
+                  ₹{(totalMoneyIn - totalMoneyOut).toLocaleString('en-IN')}
+                </p>
+              </div>
+
+              <div className="rounded-2xl p-3.5 bg-gradient-to-br from-amber-500 to-orange-500 text-slate-950 shadow-sm">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span>Orders & Bookings</span>
+                  <ShoppingBag className="w-4 h-4" />
+                </div>
+                <p className="text-xl font-black mt-1">
+                  {scopedOrders.length} <span className="text-xs font-bold">Orders</span> • {scopedBookings.length} <span className="text-xs font-bold">OPD</span>
+                </p>
+              </div>
+            </div>
+
+            {/* Quick Action Buttons */}
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setTxForm({ type: 'in', category: 'Medicine Sale', amount: '', paymentMode: 'Cash', note: '' });
+                  setTxModalOpen(true);
+                }}
+                className="py-2.5 px-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-black flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Money In</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setTxForm({ type: 'out', category: 'Stock Purchase', amount: '', paymentMode: 'Cash', note: '' });
+                  setTxModalOpen(true);
+                }}
+                className="py-2.5 px-2 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-800 text-xs font-black flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Money Out</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setWalkinOrderModalOpen(true)}
+                className="py-2.5 px-2 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-800 text-xs font-black flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Walk-in Order</span>
+              </button>
+            </div>
+
+            {/* Orders List */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-3.5 space-y-2.5 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <h4 className="font-black text-xs text-slate-900 flex items-center gap-1.5">
+                  <ShoppingBag className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Orders ({scopedOrders.length})</span>
+                </h4>
+                <button
+                  type="button"
+                  onClick={syncOperationsFromCloud}
+                  className="text-[10px] font-bold text-teal-700 hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>Refresh</span>
+                </button>
+              </div>
+
+              {scopedOrders.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-4">No orders logged yet.</p>
+              ) : (
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                  {scopedOrders.map((order) => (
+                    <div
+                      key={order.id}
+                      className="p-2.5 rounded-xl border border-slate-200 bg-slate-50/70 flex items-center justify-between gap-2 text-xs"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-extrabold text-slate-900 truncate">
+                            {order.customerName}
+                          </span>
+                          <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-blue-100 text-blue-800 uppercase">
+                            {order.source}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-500 truncate mt-0.5">
+                          {order.items.map((i) => `${i.name} ×${i.quantity}`).join(', ')}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="font-black text-slate-900">₹{order.totalAmount}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleOrderPaid(order)}
+                          className={`text-[10px] font-black px-2 py-1 rounded-lg cursor-pointer ${
+                            order.paymentStatus === 'Paid'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-amber-100 text-amber-900'
+                          }`}
+                        >
+                          {order.paymentStatus}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCycleOrderStatus(order)}
+                          className="text-[10px] font-bold px-2 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 cursor-pointer"
+                        >
+                          {order.orderStatus}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Money In & Out Ledger */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-3.5 space-y-2.5 shadow-2xs">
+              <h4 className="font-black text-xs text-slate-900 flex items-center gap-1.5">
+                <IndianRupee className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Money In & Out ({scopedTransactions.length})</span>
+              </h4>
+
+              {scopedTransactions.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-4">
+                  No cash entries recorded yet. Use Money In / Money Out above.
+                </p>
+              ) : (
+                <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+                  {scopedTransactions.map((tx) => (
+                    <div
+                      key={tx.id}
+                      className="p-2.5 rounded-xl border border-slate-100 bg-slate-50/70 flex items-center justify-between gap-2 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
+                              tx.type === 'in'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-rose-100 text-rose-800'
+                            }`}
+                          >
+                            {tx.type === 'in' ? 'IN' : 'OUT'}
+                          </span>
+                          <span className="font-extrabold text-slate-900 truncate">
+                            {tx.category}
+                          </span>
+                          <span className="text-[10px] text-slate-400">{tx.paymentMode}</span>
+                        </div>
+                        {tx.note && (
+                          <p className="text-[10px] text-slate-500 truncate mt-0.5">{tx.note}</p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span
+                          className={`font-black ${
+                            tx.type === 'in' ? 'text-emerald-700' : 'text-rose-700'
+                          }`}
+                        >
+                          {tx.type === 'in' ? '+' : '-'}₹{tx.amount}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCashTransaction(tx.id)}
+                          className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* OPD & Lab Bookings */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-3.5 space-y-2.5 shadow-2xs">
+              <h4 className="font-black text-xs text-slate-900 flex items-center gap-1.5">
+                <History className="w-3.5 h-3.5 text-purple-600" />
+                <span>Bookings ({scopedBookings.length})</span>
+              </h4>
+              {scopedBookings.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-3">No bookings recorded yet.</p>
+              ) : (
+                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                  {scopedBookings.map((b) => (
+                    <div
+                      key={b.id}
+                      className="p-2 rounded-xl border border-slate-100 bg-slate-50/70 flex items-center justify-between gap-2 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <span className="font-extrabold text-slate-900 block truncate">
+                          {b.title}
+                        </span>
+                        <span className="text-[10px] text-slate-500 truncate block">
+                          {b.type.toUpperCase()} • {b.dateLabel}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTxForm({
+                            type: 'in',
+                            category: b.type === 'doctor' ? 'OPD Fee' : 'Lab Test',
+                            amount: '',
+                            paymentMode: 'Cash',
+                            note: b.title,
+                          });
+                          setTxModalOpen(true);
+                        }}
+                        className="shrink-0 text-[10px] font-black px-2 py-1 rounded-lg bg-teal-50 text-teal-800 border border-teal-200 cursor-pointer"
+                      >
+                        + Collect ₹
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ================================================================ */}
+        {/* TAB 1: DOCTORS MANAGER (With Direct Photo Upload)                */}
         {/* ================================================================ */}
         {activeTab === 'doctors' && (
           <div className="space-y-4 animate-in fade-in">
             <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-extrabold text-base text-slate-900">
-                  Specialist Doctors Directory
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Add, edit timings, qualifications, or remove doctors.
-                </p>
-              </div>
+              <h3 className="font-extrabold text-base text-slate-900">
+                Specialist Doctors ({doctors.length})
+              </h3>
               <button
                 type="button"
                 onClick={handleOpenAddDoctor}
@@ -1413,11 +2192,25 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
                   className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex items-start justify-between gap-3"
                 >
                   <div className="flex items-start gap-3 min-w-0">
-                    <img
-                      src={doc.photo}
-                      alt={doc.name}
-                      className="w-14 h-14 rounded-xl object-cover object-top border border-slate-200 bg-slate-50 shrink-0"
-                    />
+                    <div className="relative shrink-0">
+                      <img
+                        src={doc.photo}
+                        alt={doc.name}
+                        className="w-14 h-14 rounded-xl object-cover object-top border border-slate-200 bg-slate-50"
+                      />
+                      <label
+                        className="absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-lg bg-teal-700 hover:bg-teal-800 text-white flex items-center justify-center shadow-sm cursor-pointer border-2 border-white"
+                        title="Change Doctor Photo"
+                      >
+                        <Camera className="w-3 h-3" />
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleQuickDoctorPhotoUpload(doc.id, e)}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] font-bold text-slate-400">#{idx + 1}</span>
@@ -1462,21 +2255,16 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
         )}
 
         {/* ================================================================ */}
-        {/* ================================================================ */}
-        {/* TAB 2: NOTIFICATIONS, BROADCASTS & ARRIVALS                      */}
+        {/* TAB 2: NOTIFICATIONS, BROADCASTS & DOCTOR VISIT ALERTS           */}
         {/* ================================================================ */}
         {activeTab === 'arrivals' && (
           <div className="space-y-6 animate-in fade-in">
-            {/* Header with Dual Actions */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-teal-50/80 to-slate-50 p-4 rounded-2xl border border-teal-100 shadow-2xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-teal-50 to-emerald-50 p-4 rounded-2xl border border-teal-200 shadow-2xs">
               <div>
                 <h3 className="font-extrabold text-base text-slate-900 flex items-center gap-2">
                   <Megaphone className="w-5 h-5 text-teal-700" />
-                  <span>Customer Notifications & Broadcasts</span>
+                  <span>Customer Notifications</span>
                 </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Send normal announcements or doctor arrival alerts. Synced live across all customer phones!
-                </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <button
@@ -1485,12 +2273,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
                   className="py-2 px-3 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-extrabold text-xs shadow-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
                 >
                   <Send className="w-3.5 h-3.5" />
-                  <span>Send Broadcast Notice</span>
+                  <span>Send Notice</span>
                 </button>
                 <button
                   type="button"
                   onClick={handleOpenAddArrival}
-                  className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-extrabold text-xs shadow-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                  className="py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Doctor Visit Alert</span>
@@ -2270,6 +3058,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
                 </p>
               </div>
               <div className="flex items-center gap-2">
+                {firebaseActive && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPwdFeedback(null);
+                      setPwdModalOpen(true);
+                    }}
+                    className="py-2 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-800 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                    <span>Change Password</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={loadAdmins}
@@ -2292,26 +3093,26 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
 
             {/* Single-Machine Lock Enforced Banner */}
             <div className="bg-teal-50 border border-teal-200 rounded-2xl p-4 space-y-2">
-              <div className="flex items-start gap-2.5">
+              <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-teal-700 text-white flex items-center justify-center shrink-0">
                   <Lock className="w-4 h-4" />
                 </div>
                 <div>
                   <h4 className="text-xs font-black text-teal-950">
-                    Single-Machine Session Protection Active
+                    1-Device Session Lock Active
                   </h4>
-                  <p className="text-[11px] text-teal-800 leading-relaxed mt-0.5">
-                    For strict security, an admin account can only be actively logged in on <strong>one machine or browser at any given time</strong>. If an administrator signs in from another computer, phone, or browser, the previous session is immediately disconnected in real-time.
+                  <p className="text-[11px] text-teal-800">
+                    {currentDeviceLabel}
                   </p>
                 </div>
               </div>
               <div className="pt-2 border-t border-teal-100 flex items-center justify-between text-[11px] font-semibold text-teal-900">
                 <span className="flex items-center gap-1">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                  <span>Current Device Session: Active</span>
+                  <span>Verified Session Active</span>
                 </span>
                 <span className="font-mono text-[10px] text-teal-700 bg-teal-100 px-2 py-0.5 rounded-md">
-                  {activeSessionId ? activeSessionId.substring(0, 16) + '...' : 'Local Secure Lock'}
+                  {activeSessionId ? activeSessionId.substring(0, 16) + '...' : 'Local Lock'}
                 </span>
               </div>
             </div>
@@ -2572,42 +3373,59 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
                 />
               </div>
 
-              {/* Photo Avatar Preset Selector */}
+              {/* Photo Upload + Preview + Avatar Presets */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Doctor Photo / Avatar
+                  Doctor Photo
                 </label>
-                <div className="flex items-center gap-2 mb-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setDoctorForm({ ...doctorForm, photo: DEFAULT_MALE_DOCTOR_PHOTO })
-                    }
-                    className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold cursor-pointer ${
-                      doctorForm.photo === DEFAULT_MALE_DOCTOR_PHOTO
-                        ? 'bg-teal-700 text-white border-teal-700'
-                        : 'bg-slate-50 text-slate-700 border-slate-200'
-                    }`}
-                  >
-                    👨‍⚕️ Male Avatar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setDoctorForm({ ...doctorForm, photo: DEFAULT_FEMALE_DOCTOR_PHOTO })
-                    }
-                    className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold cursor-pointer ${
-                      doctorForm.photo === DEFAULT_FEMALE_DOCTOR_PHOTO
-                        ? 'bg-teal-700 text-white border-teal-700'
-                        : 'bg-slate-50 text-slate-700 border-slate-200'
-                    }`}
-                  >
-                    👩‍⚕️ Female Avatar
-                  </button>
+                <div className="flex items-center gap-3 mb-2">
+                  <img
+                    src={doctorForm.photo}
+                    alt="Doctor preview"
+                    className="w-14 h-14 rounded-2xl object-cover object-top border border-slate-200 bg-slate-50 shrink-0"
+                  />
+                  <div className="flex flex-wrap gap-1.5">
+                    <label className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer flex items-center gap-1.5">
+                      <Camera className="w-3.5 h-3.5" />
+                      <span>Upload Photo</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleModalDoctorPhotoUpload}
+                        className="hidden"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDoctorForm({ ...doctorForm, photo: DEFAULT_MALE_DOCTOR_PHOTO })
+                      }
+                      className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold cursor-pointer ${
+                        doctorForm.photo === DEFAULT_MALE_DOCTOR_PHOTO
+                          ? 'bg-teal-700 text-white border-teal-700'
+                          : 'bg-slate-50 text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      👨‍⚕️ Male
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDoctorForm({ ...doctorForm, photo: DEFAULT_FEMALE_DOCTOR_PHOTO })
+                      }
+                      className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold cursor-pointer ${
+                        doctorForm.photo === DEFAULT_FEMALE_DOCTOR_PHOTO
+                          ? 'bg-teal-700 text-white border-teal-700'
+                          : 'bg-slate-50 text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      👩‍⚕️ Female
+                    </button>
+                  </div>
                 </div>
                 <input
                   type="text"
-                  placeholder="Or enter custom image URL"
+                  placeholder="Or paste custom image URL"
                   value={doctorForm.photo.startsWith('data:') ? '' : doctorForm.photo}
                   onChange={(e) => setDoctorForm({ ...doctorForm, photo: e.target.value })}
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:outline-teal-600 placeholder:text-slate-400"
@@ -3422,6 +4240,300 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp }) => {
           </div>
         </div>
       )}
+      {/* ================================================================== */}
+      {/* MODAL: MONEY IN / MONEY OUT TRANSACTION                            */}
+      {/* ================================================================== */}
+      {txModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <h3 className="font-black text-base text-slate-900">
+                {txForm.type === 'in' ? 'Record Money In' : 'Record Money Out'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setTxModalOpen(false)}
+                className="p-1 rounded-lg hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-5 h-5 text-slate-500" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCashTransaction} className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTxForm({ ...txForm, type: 'in', category: 'Medicine Sale' })}
+                  className={`py-2 rounded-xl text-xs font-black cursor-pointer border ${
+                    txForm.type === 'in'
+                      ? 'bg-emerald-600 text-white border-emerald-600'
+                      : 'bg-slate-50 text-slate-700 border-slate-200'
+                  }`}
+                >
+                  + Money In
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTxForm({ ...txForm, type: 'out', category: 'Stock Purchase' })}
+                  className={`py-2 rounded-xl text-xs font-black cursor-pointer border ${
+                    txForm.type === 'out'
+                      ? 'bg-rose-600 text-white border-rose-600'
+                      : 'bg-slate-50 text-slate-700 border-slate-200'
+                  }`}
+                >
+                  - Money Out
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Amount (₹)</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    placeholder="500"
+                    value={txForm.amount}
+                    onChange={(e) => setTxForm({ ...txForm, amount: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold focus:outline-teal-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Mode</label>
+                  <select
+                    value={txForm.paymentMode}
+                    onChange={(e) =>
+                      setTxForm({ ...txForm, paymentMode: e.target.value as 'Cash' | 'UPI' | 'Card' })
+                    }
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold bg-white focus:outline-teal-600"
+                  >
+                    <option value="Cash">Cash</option>
+                    <option value="UPI">UPI</option>
+                    <option value="Card">Card</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
+                <select
+                  value={txForm.category}
+                  onChange={(e) => setTxForm({ ...txForm, category: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold bg-white focus:outline-teal-600"
+                >
+                  {txForm.type === 'in' ? (
+                    <>
+                      <option value="Medicine Sale">Medicine Sale</option>
+                      <option value="OPD Fee">OPD Fee</option>
+                      <option value="Lab Test">Lab Test</option>
+                      <option value="Physiotherapy">Physiotherapy</option>
+                      <option value="Other Income">Other Income</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="Stock Purchase">Stock Purchase</option>
+                      <option value="Doctor Payout">Doctor Payout</option>
+                      <option value="Staff / Utility">Staff / Utility</option>
+                      <option value="Other Expense">Other Expense</option>
+                    </>
+                  )}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Note</label>
+                <input
+                  type="text"
+                  placeholder="Optional details"
+                  value={txForm.note}
+                  onChange={(e) => setTxForm({ ...txForm, note: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:outline-teal-600"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-extrabold cursor-pointer"
+              >
+                Save Entry
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================== */}
+      {/* MODAL: LOG WALK-IN COUNTER ORDER                                   */}
+      {/* ================================================================== */}
+      {walkinOrderModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <h3 className="font-black text-base text-slate-900">Add Walk-in Order</h3>
+              <button
+                type="button"
+                onClick={() => setWalkinOrderModalOpen(false)}
+                className="p-1 rounded-lg hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-5 h-5 text-slate-500" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveWalkinOrder} className="space-y-3">
+              <input
+                type="text"
+                required
+                placeholder="Customer / Patient Name"
+                value={walkinOrderForm.customerName}
+                onChange={(e) =>
+                  setWalkinOrderForm({ ...walkinOrderForm, customerName: e.target.value })
+                }
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-teal-600"
+              />
+              <input
+                type="tel"
+                placeholder="Mobile Number (Optional)"
+                value={walkinOrderForm.customerPhone}
+                onChange={(e) =>
+                  setWalkinOrderForm({ ...walkinOrderForm, customerPhone: e.target.value })
+                }
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-teal-600"
+              />
+              <input
+                type="text"
+                required
+                placeholder="Medicines / Items"
+                value={walkinOrderForm.itemSummary}
+                onChange={(e) =>
+                  setWalkinOrderForm({ ...walkinOrderForm, itemSummary: e.target.value })
+                }
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-teal-600"
+              />
+              <input
+                type="number"
+                required
+                min="1"
+                placeholder="Bill Amount (₹)"
+                value={walkinOrderForm.totalAmount}
+                onChange={(e) =>
+                  setWalkinOrderForm({ ...walkinOrderForm, totalAmount: e.target.value })
+                }
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold focus:outline-teal-600"
+              />
+              <label className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={walkinOrderForm.paid}
+                  onChange={(e) =>
+                    setWalkinOrderForm({ ...walkinOrderForm, paid: e.target.checked })
+                  }
+                />
+                <span>Paid (Also add to Money In)</span>
+              </label>
+              <button
+                type="submit"
+                className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold cursor-pointer"
+              >
+                Save Order
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================== */}
+      {/* MODAL: CHANGE TO STRONG PASSWORD                                   */}
+      {/* ================================================================== */}
+      {pwdModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <h3 className="font-black text-base text-slate-900">Set Strong Password</h3>
+              <button
+                type="button"
+                onClick={() => setPwdModalOpen(false)}
+                className="p-1 rounded-lg hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-5 h-5 text-slate-500" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateStrongPassword} className="space-y-3">
+              <input
+                type="password"
+                required
+                placeholder="Current Password"
+                value={currentPwd}
+                onChange={(e) => setCurrentPwd(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-teal-600"
+              />
+              <input
+                type="password"
+                required
+                placeholder="New Strong Password"
+                value={newStrongPwd}
+                onChange={(e) => setNewStrongPwd(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-teal-600"
+              />
+              <input
+                type="password"
+                required
+                placeholder="Confirm New Password"
+                value={confirmStrongPwd}
+                onChange={(e) => setConfirmStrongPwd(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-teal-600"
+              />
+
+              {/* Strong password checklist */}
+              {(() => {
+                const st = validateStrongPassword(newStrongPwd);
+                return (
+                  <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] space-y-1">
+                    <div className="flex flex-wrap gap-x-3 gap-y-1">
+                      <span className={st.checks.minLength ? 'text-emerald-700 font-bold' : 'text-slate-400'}>
+                        {st.checks.minLength ? '✓' : '○'} 8+ chars
+                      </span>
+                      <span className={st.checks.hasUpper ? 'text-emerald-700 font-bold' : 'text-slate-400'}>
+                        {st.checks.hasUpper ? '✓' : '○'} Uppercase
+                      </span>
+                      <span className={st.checks.hasLower ? 'text-emerald-700 font-bold' : 'text-slate-400'}>
+                        {st.checks.hasLower ? '✓' : '○'} Lowercase
+                      </span>
+                      <span className={st.checks.hasNumber ? 'text-emerald-700 font-bold' : 'text-slate-400'}>
+                        {st.checks.hasNumber ? '✓' : '○'} Number
+                      </span>
+                      <span className={st.checks.hasSpecial ? 'text-emerald-700 font-bold' : 'text-slate-400'}>
+                        {st.checks.hasSpecial ? '✓' : '○'} Symbol
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {pwdFeedback && (
+                <div
+                  className={`p-2.5 rounded-xl text-xs font-semibold ${
+                    pwdFeedback.ok
+                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                      : 'bg-rose-50 text-rose-700 border border-rose-200'
+                  }`}
+                >
+                  {pwdFeedback.msg}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isUpdatingPwd}
+                className="w-full py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-extrabold cursor-pointer disabled:opacity-60"
+              >
+                {isUpdatingPwd ? 'Updating...' : 'Update Password'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+

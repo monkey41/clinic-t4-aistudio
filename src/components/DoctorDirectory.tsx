@@ -86,9 +86,6 @@ export const DoctorDirectory: React.FC<DoctorDirectoryProps> = ({
           <h2 className={`text-xl font-black tracking-tight flex items-center gap-2 ${p.heading}`}>
             <span>👨‍⚕️</span> {t.doctors || 'Specialist Doctors'}
           </h2>
-          <p className={`text-xs mt-0.5 font-medium ${p.subtext}`}>
-            {doctors.length} Specialist Consultants Available for OPD Registration
-          </p>
         </div>
 
         <button
@@ -97,8 +94,8 @@ export const DoctorDirectory: React.FC<DoctorDirectoryProps> = ({
             window.open(doctorBookingUrl, '_blank', 'noopener,noreferrer');
             addBookingHistoryItem({
               type: 'doctor',
-              title: 'General Doctor OPD Registration',
-              subtitle: 'Official Doctor Portal',
+              title: 'Doctor OPD Registration',
+              subtitle: 'Doctor OPD Registration',
               url: doctorBookingUrl,
             });
           }}
@@ -166,8 +163,7 @@ export const DoctorDirectory: React.FC<DoctorDirectoryProps> = ({
 
       {/* Matching Count */}
       <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 px-1">
-        <span>Showing {filteredDoctors.length} Doctors</span>
-        <span className="text-[10px] font-medium text-teal-700">Tap card to view full profile</span>
+        <span>{filteredDoctors.length} Doctors</span>
       </div>
 
       {/* 3. Compact Doctor Cards List */}
@@ -311,35 +307,24 @@ export const DoctorDirectory: React.FC<DoctorDirectoryProps> = ({
                 </div>
               </div>
 
-              {/* Consultation Timings Card */}
               <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3.5 space-y-1">
                 <div className="flex items-center gap-1.5 text-xs font-extrabold text-emerald-950">
                   <Clock className="w-4 h-4 text-emerald-700 shrink-0" />
-                  <span>OPD Visiting Timings:</span>
+                  <span>OPD Timings</span>
                 </div>
                 <p className="text-xs font-bold text-emerald-900 pl-5 leading-relaxed">
                   {activeDoctorModal.timing}
                 </p>
-                <p className="text-[10px] text-emerald-700 pl-5">
-                  Registration & token slip issued online or at Life Care Hospital Square counter.
-                </p>
               </div>
 
-              {/* Clinical Focus & Experience */}
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2">
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-1.5">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
                   <Award className="w-4 h-4 text-amber-600" />
-                  <span>Specialist Experience & Areas of Focus</span>
+                  <span>Focus Areas</span>
                 </div>
                 <p className="text-xs text-slate-700 leading-relaxed">
-                  {activeDoctorModal.experience || 'Senior Consultant practicing at Baripada clinic.'}
+                  {activeDoctorModal.experience || 'Senior Consultant at Life Care Poly Clinic.'}
                 </p>
-              </div>
-
-              {/* Clinic Location */}
-              <div className="text-[11px] text-slate-500 flex items-center gap-2 p-2 rounded-xl bg-slate-100">
-                <Building className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                <span>Life Care Medicine Store & Poly Clinic, Hospital Square, Baripada</span>
               </div>
             </div>
 
