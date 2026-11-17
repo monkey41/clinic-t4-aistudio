@@ -12,6 +12,10 @@ import {
   CashTransaction,
   PinchCategory,
   PinchUpdate,
+  ClinicPromotionsConfig,
+  FestiveThemeId,
+  BannerColorPreset,
+  PromoLinkTab,
 } from '../types';
 import {
   getDoctors,
@@ -43,6 +47,9 @@ import {
   savePinchUpdates,
   isPinchUpdateActive,
   getLocalTodayIso,
+  getPromotionsConfig,
+  savePromotionsConfig,
+  DEFAULT_PROMOTIONS_CONFIG,
   resetAllToFactoryDefaults,
 } from '../data/clinicData';
 import {
@@ -94,6 +101,8 @@ import {
   MessageSquareHeart,
   HardDrive,
   Cloud,
+  Image as ImageIcon,
+  PartyPopper,
 } from 'lucide-react';
 import {
   getFirebaseAuth,
@@ -125,6 +134,8 @@ import {
   syncPinchUpdatesToFirestore,
   deletePinchUpdateFromFirestore,
   fetchPinchUpdatesFromFirestore,
+  syncPromotionsToFirestore,
+  fetchPromotionsFromFirestore,
   getSessionFirestoreStats,
   validateStrongPassword,
   sendAdminPasswordReset,
@@ -132,6 +143,14 @@ import {
   getReadableDeviceLabel,
 } from '../services/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
+import {
+  FESTIVALS_META,
+  FESTIVE_ASSETS,
+  getAssetsForFestival,
+  FestiveArtwork,
+  RunningBanner,
+  FooterShowcase,
+} from './FestiveLibrary';
 
 interface AdminPortalProps {
   onBackToApp: () => void;
@@ -140,6 +159,8 @@ interface AdminPortalProps {
 
 type AdminTab =
   | 'overview'
+  | 'usage'
+  | 'promotions'
   | 'pinch'
   | 'doctors'
   | 'arrivals'
@@ -151,15 +172,27 @@ type AdminTab =
   | 'admins';
 
 // Resize & compress uploaded doctor portrait so it syncs reliably via Firestore & localStorage
-function compressDoctorImageFile(file: File): Promise<string> {
+function compressDoctorImageFile(file: File, maxSize = 360): Promise<string> {
   return new Promise((resolve, reject) => {
+    // Preserve lightweight animated GIFs directly (<= 420 KB)
+    if (file.type === 'image/gif') {
+      if (file.size > 420 * 1024) {
+        reject(new Error('GIF file must be 420 KB or smaller so it loads fast on mobile.'));
+        return;
+      }
+      const gifReader = new FileReader();
+      gifReader.onerror = () => reject(new Error('Could not read GIF file.'));
+      gifReader.onload = () => resolve(gifReader.result as string);
+      gifReader.readAsDataURL(file);
+      return;
+    }
+
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('Could not read selected image.'));
     reader.onload = () => {
       const img = new Image();
       img.onerror = () => reject(new Error('Invalid image file.'));
       img.onload = () => {
-        const maxSize = 360;
         let width = img.width;
         let height = img.height;
         if (width > height && width > maxSize) {
@@ -201,12 +234,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
   const [firebaseActive, setFirebaseActive] = useState<boolean>(false);
   const [testingFirebase, setTestingFirebase] = useState<boolean>(false);
 
-  // Forgot Password & Change Strong Password State
+  // Forgot Password & New Strong Password State (strength meter strictly in forgot-password flow)
   const [forgotMode, setForgotMode] = useState<boolean>(false);
+  const [forgotNewPwdMode, setForgotNewPwdMode] = useState<boolean>(false);
+  const [forgotNewPwd, setForgotNewPwd] = useState<string>('');
+  const [forgotConfirmPwd, setForgotConfirmPwd] = useState<string>('');
   const [resetEmail, setResetEmail] = useState<string>('');
   const [isSendingReset, setIsSendingReset] = useState<boolean>(false);
   const [resetFeedback, setResetFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
-  const [weakPasswordBanner, setWeakPasswordBanner] = useState<boolean>(false);
 
   const [pwdModalOpen, setPwdModalOpen] = useState<boolean>(false);
   const [currentPwd, setCurrentPwd] = useState<string>('');
@@ -250,6 +285,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
     getCashTransactions()
   );
   const [pinchUpdates, setPinchUpdates] = useState<PinchUpdate[]>(() => getPinchUpdates());
+  const [promotionsConfig, setPromotionsConfig] = useState<ClinicPromotionsConfig>(() =>
+    getPromotionsConfig()
+  );
+  const [promoDraft, setPromoDraft] = useState<ClinicPromotionsConfig>(() =>
+    getPromotionsConfig()
+  );
+  const [isPublishingPromo, setIsPublishingPromo] = useState<boolean>(false);
+  const [promoMediaLoading, setPromoMediaLoading] = useState<boolean>(false);
 
   // Ledger / Walk-in Order Modal States
   const [txModalOpen, setTxModalOpen] = useState(false);
@@ -296,6 +339,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
     setStoreOrders(getStoreOrders());
     setCashTransactions(getCashTransactions());
     setPinchUpdates(getPinchUpdates());
+    setPromotionsConfig(getPromotionsConfig());
   };
 
   useEffect(() => {
@@ -319,11 +363,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
 
   const syncOperationsFromCloud = async () => {
     try {
-      const [cloudOrders, cloudTxs, cloudOffers, cloudPinch] = await Promise.all([
+      const [cloudOrders, cloudTxs, cloudOffers, cloudPinch, cloudPromos] = await Promise.all([
         fetchAdminOrdersFromFirestore(),
         fetchTransactionsFromFirestore(),
         fetchOffersFromFirestore(),
         fetchPinchUpdatesFromFirestore(),
+        fetchPromotionsFromFirestore(),
       ]);
       if (cloudOrders && cloudOrders.length > 0) {
         const local = getStoreOrders();
@@ -352,6 +397,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
       if (cloudPinch && Array.isArray(cloudPinch)) {
         savePinchUpdates(cloudPinch);
         setPinchUpdates(cloudPinch);
+      }
+      if (cloudPromos) {
+        savePromotionsConfig(cloudPromos);
+        setPromotionsConfig(cloudPromos);
+        setPromoDraft(cloudPromos);
       }
     } catch {
       // ignore offline
@@ -441,7 +491,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
     };
   }, [isAuthenticated, adminUser?.uid, activeSessionId]);
 
-  // Handle Login with Email & Password
+  // Handle Login with Email & Password (no strong password indicator during sign-in)
   const handleLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setAuthError('');
@@ -456,8 +506,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
       return;
     }
 
-    const strength = validateStrongPassword(passwordInput);
-
     setIsSigningIn(true);
     try {
       if (isFirebaseConfigured()) {
@@ -466,7 +514,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
           setAdminUser(result.user);
           setAdminEmail(result.user.email || emailInput.trim());
           setIsAuthenticated(true);
-          setWeakPasswordBanner(!strength.valid);
 
           // Enforce single-machine/phone session lock
           const newSessId = await registerAdminSession(result.user);
@@ -485,8 +532,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
         ];
         if (!allowedAdmins.includes(normalized)) {
           setAuthError('Unauthorized admin email.');
-        } else if (!strength.valid) {
-          setAuthError(`Strong password required — ${strength.message}`);
         } else {
           setIsAuthenticated(true);
           setAdminEmail(emailInput.trim());
@@ -504,10 +549,30 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
 
   const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSendingReset(true);
     setResetFeedback(null);
+
+    if (forgotNewPwdMode) {
+      if (forgotNewPwd !== forgotConfirmPwd) {
+        setResetFeedback({ ok: false, msg: 'New passwords do not match.' });
+        return;
+      }
+      const check = validateStrongPassword(forgotNewPwd);
+      if (!check.valid) {
+        setResetFeedback({ ok: false, msg: `Strong password required: ${check.message}` });
+        return;
+      }
+    }
+
+    setIsSendingReset(true);
     const res = await sendAdminPasswordReset(resetEmail || emailInput);
-    setResetFeedback({ ok: res.success, msg: res.message });
+    if (res.success && forgotNewPwdMode) {
+      setResetFeedback({
+        ok: true,
+        msg: 'Strong password verified. Use the reset link sent to your email to apply this password.',
+      });
+    } else {
+      setResetFeedback({ ok: res.success, msg: res.message });
+    }
     setIsSendingReset(false);
   };
 
@@ -528,11 +593,52 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
     setPwdFeedback({ ok: res.success, msg: res.message });
     setIsUpdatingPwd(false);
     if (res.success) {
-      setWeakPasswordBanner(false);
       setCurrentPwd('');
       setNewStrongPwd('');
       setConfirmStrongPwd('');
       setTimeout(() => setPwdModalOpen(false), 1200);
+    }
+  };
+
+  // Publish / Reset Festive Decorations, Running Banner & Footer Showcase
+  const handlePublishPromotions = async (configToPublish: ClinicPromotionsConfig = promoDraft) => {
+    setIsPublishingPromo(true);
+    const nextConfig: ClinicPromotionsConfig = {
+      ...configToPublish,
+      updatedAt: new Date().toISOString(),
+    };
+    savePromotionsConfig(nextConfig);
+    setPromotionsConfig(nextConfig);
+    setPromoDraft(nextConfig);
+    const synced = await syncPromotionsToFirestore(nextConfig);
+    setIsPublishingPromo(false);
+    showToast(
+      synced
+        ? 'Festive & Ads published live to customer phones!'
+        : 'Saved locally (sign in with Firebase to publish to all phones).'
+    );
+  };
+
+  const handlePromoMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPromoMediaLoading(true);
+    try {
+      const dataUrl = await compressDoctorImageFile(file, 560);
+      setPromoDraft((prev) => ({
+        ...prev,
+        footerShowcase: {
+          ...prev.footerShowcase,
+          enabled: true,
+          mediaUrl: dataUrl,
+        },
+      }));
+      showToast('Picture / GIF loaded into Preview. Click Publish Live when ready.');
+    } catch (err: any) {
+      showToast(err?.message || 'Could not load selected image/GIF.');
+    } finally {
+      setPromoMediaLoading(false);
+      e.target.value = '';
     }
   };
 
@@ -1575,6 +1681,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
     const ordersBytes = byteSize(storeOrders);
     const ledgerBytes = byteSize(cashTransactions);
     const testsBytes = byteSize(pathologyTests);
+    const promosBytes = byteSize(promotionsConfig);
 
     const totalDataBytes =
       docsBytes +
@@ -1585,10 +1692,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
       arrivalsBytes +
       ordersBytes +
       ledgerBytes +
-      testsBytes;
+      testsBytes +
+      promosBytes;
 
     const totalDataKb = Math.round((totalDataBytes / 1024) * 10) / 10;
     const doctorsDocKb = Math.round((docsBytes / 1024) * 10) / 10;
+    const promosDocKb = Math.round((promosBytes / 1024) * 10) / 10;
+    const productsDocKb = Math.round((productsBytes / 1024) * 10) / 10;
     const singleDocPct = Math.min(100, Math.round((doctorsDocKb / 1024) * 1000) / 10);
     const firestoreStoragePct = Math.min(
       100,
@@ -1612,13 +1722,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
     return {
       totalDataKb,
       doctorsDocKb,
+      promosDocKb,
+      productsDocKb,
       singleDocPct,
       firestoreStoragePct,
       readsToday: ops.reads,
       writesToday: ops.writes,
       localStorageKb: totalLocalKb,
       docCount:
-        7 +
+        8 +
         products.length +
         storeOrders.length +
         adminList.length,
@@ -1633,6 +1745,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
     storeOrders,
     cashTransactions,
     pathologyTests,
+    promotionsConfig,
     adminList.length,
   ]);
 
@@ -1654,23 +1767,24 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
 
   // ----------------------------------------------------------------------
   // If Not Authenticated -> Show Clean Sign-In & Forgot Password Gate
+  // (Strong Password indicator appears ONLY when creating a new password under Forgot Password)
   // ----------------------------------------------------------------------
   if (!isAuthenticated) {
-    const loginPwdStrength = validateStrongPassword(passwordInput);
+    const forgotPwdStrength = validateStrongPassword(forgotNewPwd);
 
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-slate-50 via-teal-50/40 to-emerald-50/40">
-        <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 p-6 sm:p-8 space-y-5">
+      <div className="min-h-screen flex items-center justify-center p-4 aura-page-bg">
+        <div className="w-full max-w-md bg-white/92 backdrop-blur-xl rounded-3xl shadow-2xl border border-white p-6 sm:p-8 space-y-5">
           <div className="flex items-center justify-between">
             <button
               type="button"
               onClick={handleBackToApp}
-              className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-teal-700 transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 text-xs font-bold text-[#1E2252] hover:text-[#6D4AFF] transition-colors cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4" />
               <span>Back to Clinic</span>
             </button>
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-teal-50 border border-teal-200 text-teal-800 text-[11px] font-bold">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#F2ECFF] border border-[#E2D9FF] text-[#5B35F5] text-[11px] font-bold">
               <Shield className="w-3.5 h-3.5" />
               <span>1-Device Lock</span>
             </div>
@@ -1684,7 +1798,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                 className="w-full h-full object-contain"
               />
             </div>
-            <h2 className="text-xl font-black text-slate-900 tracking-tight">
+            <h2 className="text-xl font-black text-[#1E2252] tracking-tight">
               {forgotMode ? 'Reset Admin Password' : 'Life Care Admin'}
             </h2>
           </div>
@@ -1702,11 +1816,109 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                     placeholder="admin@lifecare.com"
                     value={resetEmail || emailInput}
                     onChange={(e) => setResetEmail(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-300 text-slate-900 font-medium text-sm focus:outline-teal-600"
+                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-300 text-slate-900 font-medium text-sm focus:outline-[#6D4AFF]"
                   />
                   <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
                 </div>
               </div>
+
+              {/* Toggle to prepare & validate a strong new password under Forgot Password */}
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForgotNewPwdMode(!forgotNewPwdMode);
+                    setResetFeedback(null);
+                  }}
+                  className="text-xs font-bold text-[#6D4AFF] hover:underline cursor-pointer flex items-center gap-1.5"
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  <span>
+                    {forgotNewPwdMode
+                      ? 'Hide New Strong Password Setup'
+                      : 'Going for a New Password? Check Strong Password Rules →'}
+                  </span>
+                </button>
+              </div>
+
+              {forgotNewPwdMode && (
+                <div className="p-3.5 rounded-2xl bg-[#F5F2FF] border border-[#E2D9FF] space-y-2.5">
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#1E2252] mb-1">
+                      New Strong Password
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="Create strong new password"
+                      value={forgotNewPwd}
+                      onChange={(e) => setForgotNewPwd(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 font-medium text-xs focus:outline-[#6D4AFF]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#1E2252] mb-1">
+                      Confirm New Password
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="Re-enter new password"
+                      value={forgotConfirmPwd}
+                      onChange={(e) => setForgotConfirmPwd(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 font-medium text-xs focus:outline-[#6D4AFF]"
+                    />
+                  </div>
+
+                  {/* Strong Password Meter & Checklist (shown ONLY under Forgot Password New Password) */}
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex items-center gap-1">
+                      {[1, 2, 3, 4, 5].map((bar) => (
+                        <div
+                          key={bar}
+                          className={`h-1.5 flex-1 rounded-full transition-colors ${
+                            bar <= forgotPwdStrength.score
+                              ? forgotPwdStrength.score >= 5
+                                ? 'bg-emerald-500'
+                                : forgotPwdStrength.score >= 3
+                                ? 'bg-amber-500'
+                                : 'bg-rose-500'
+                              : 'bg-slate-200'
+                          }`}
+                        />
+                      ))}
+                      <span
+                        className={`text-[10px] font-extrabold ml-1 ${
+                          forgotPwdStrength.score >= 5
+                            ? 'text-emerald-700'
+                            : forgotPwdStrength.score >= 3
+                            ? 'text-amber-700'
+                            : 'text-rose-600'
+                        }`}
+                      >
+                        {forgotNewPwd ? forgotPwdStrength.label : 'Strong Required'}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+                      <span className={forgotPwdStrength.checks.minLength ? 'text-emerald-700 font-bold' : 'text-slate-500'}>
+                        {forgotPwdStrength.checks.minLength ? '✓' : '○'} 8+ chars
+                      </span>
+                      <span className={forgotPwdStrength.checks.hasUpper ? 'text-emerald-700 font-bold' : 'text-slate-500'}>
+                        {forgotPwdStrength.checks.hasUpper ? '✓' : '○'} Uppercase
+                      </span>
+                      <span className={forgotPwdStrength.checks.hasLower ? 'text-emerald-700 font-bold' : 'text-slate-500'}>
+                        {forgotPwdStrength.checks.hasLower ? '✓' : '○'} Lowercase
+                      </span>
+                      <span className={forgotPwdStrength.checks.hasNumber ? 'text-emerald-700 font-bold' : 'text-slate-500'}>
+                        {forgotPwdStrength.checks.hasNumber ? '✓' : '○'} Number
+                      </span>
+                      <span className={forgotPwdStrength.checks.hasSpecial ? 'text-emerald-700 font-bold' : 'text-slate-500'}>
+                        {forgotPwdStrength.checks.hasSpecial ? '✓' : '○'} Symbol
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {resetFeedback && (
                 <div
@@ -1728,19 +1940,28 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
               <button
                 type="submit"
                 disabled={isSendingReset}
-                className="w-full py-3 px-4 rounded-xl bg-teal-700 hover:bg-teal-800 disabled:opacity-70 text-white font-extrabold text-sm shadow-md cursor-pointer flex items-center justify-center gap-2"
+                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-[#A855F7] to-[#6366F1] hover:opacity-95 disabled:opacity-70 text-white font-extrabold text-sm shadow-md cursor-pointer flex items-center justify-center gap-2"
               >
                 {isSendingReset ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
-                <span>{isSendingReset ? 'Sending...' : 'Send Reset Link'}</span>
+                <span>
+                  {isSendingReset
+                    ? 'Sending...'
+                    : forgotNewPwdMode
+                    ? 'Verify Strong Password & Send Reset Link'
+                    : 'Send Reset Link'}
+                </span>
               </button>
 
               <button
                 type="button"
                 onClick={() => {
                   setForgotMode(false);
+                  setForgotNewPwdMode(false);
+                  setForgotNewPwd('');
+                  setForgotConfirmPwd('');
                   setResetFeedback(null);
                 }}
-                className="w-full text-xs font-bold text-teal-700 hover:underline cursor-pointer text-center"
+                className="w-full text-xs font-bold text-[#6D4AFF] hover:underline cursor-pointer text-center"
               >
                 ← Back to Sign In
               </button>
@@ -1758,7 +1979,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                     placeholder="admin@lifecare.com"
                     value={emailInput}
                     onChange={(e) => setEmailInput(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-300 text-slate-900 font-medium text-sm focus:outline-teal-600 placeholder:text-slate-400"
+                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-300 text-slate-900 font-medium text-sm focus:outline-[#6D4AFF] placeholder:text-slate-400"
                   />
                   <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
                 </div>
@@ -1776,7 +1997,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                       setForgotMode(true);
                       setAuthError('');
                     }}
-                    className="text-[11px] font-bold text-teal-700 hover:underline cursor-pointer"
+                    className="text-[11px] font-bold text-[#6D4AFF] hover:underline cursor-pointer"
                   >
                     Forgot Password?
                   </button>
@@ -1788,7 +2009,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                     placeholder="••••••••••••"
                     value={passwordInput}
                     onChange={(e) => setPasswordInput(e.target.value)}
-                    className="w-full pl-10 pr-10 py-3 rounded-xl border border-slate-300 text-slate-900 font-medium text-sm focus:outline-teal-600 placeholder:text-slate-400"
+                    className="w-full pl-10 pr-10 py-3 rounded-xl border border-slate-300 text-slate-900 font-medium text-sm focus:outline-[#6D4AFF] placeholder:text-slate-400"
                   />
                   <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
                   <button
@@ -1800,39 +2021,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-
-                {/* Live Password Strength Indicator */}
-                {passwordInput.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    <div className="flex items-center gap-1">
-                      {[1, 2, 3, 4, 5].map((bar) => (
-                        <div
-                          key={bar}
-                          className={`h-1 flex-1 rounded-full transition-colors ${
-                            bar <= loginPwdStrength.score
-                              ? loginPwdStrength.score >= 5
-                                ? 'bg-emerald-500'
-                                : loginPwdStrength.score >= 3
-                                ? 'bg-amber-500'
-                                : 'bg-rose-500'
-                              : 'bg-slate-200'
-                          }`}
-                        />
-                      ))}
-                      <span
-                        className={`text-[10px] font-extrabold ml-1 ${
-                          loginPwdStrength.score >= 5
-                            ? 'text-emerald-700'
-                            : loginPwdStrength.score >= 3
-                            ? 'text-amber-700'
-                            : 'text-rose-600'
-                        }`}
-                      >
-                        {loginPwdStrength.label}
-                      </span>
-                    </div>
-                  </div>
-                )}
               </div>
 
               {sessionWarning && !authError && (
@@ -1852,7 +2040,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
               <button
                 type="submit"
                 disabled={isSigningIn}
-                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-teal-700 to-emerald-700 hover:from-teal-800 hover:to-emerald-800 disabled:opacity-70 text-white font-extrabold text-sm shadow-md transition-all active:scale-98 cursor-pointer flex items-center justify-center gap-2"
+                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-[#A855F7] to-[#6366F1] hover:opacity-95 disabled:opacity-70 text-white font-extrabold text-sm shadow-md transition-all active:scale-98 cursor-pointer flex items-center justify-center gap-2"
               >
                 {isSigningIn ? (
                   <>
@@ -1877,17 +2065,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
   // Authenticated Admin Dashboard
   // ----------------------------------------------------------------------
   return (
-    <div className="min-h-screen pb-24 text-slate-800">
+    <div className="min-h-screen pb-24 text-[#1E2252] aura-page-bg">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-xs font-bold px-4 py-2.5 rounded-2xl shadow-xl flex items-center gap-2 animate-in fade-in slide-in-from-top duration-200">
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-[#1E2252] text-white text-xs font-bold px-4 py-2.5 rounded-2xl shadow-xl flex items-center gap-2 animate-in fade-in slide-in-from-top duration-200">
           <CheckCircle2 className="w-4 h-4 text-emerald-400" />
           <span>{toastMessage}</span>
         </div>
       )}
 
       {/* Admin Header */}
-      <div className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs px-4 py-3">
+      <div className="sticky top-0 z-40 bg-white/88 backdrop-blur-xl border-b border-white/80 shadow-xs px-4 py-3">
         <div className="max-w-xl mx-auto flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <button
@@ -1900,8 +2088,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
             </button>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="font-black text-sm text-slate-900">Admin Control</span>
-                <span className="text-[10px] bg-teal-100 text-teal-800 font-extrabold px-1.5 py-0.5 rounded-md flex items-center gap-1">
+                <span className="font-black text-sm text-[#1E2252]">Admin Control</span>
+                <span className="text-[10px] bg-[#F2ECFF] text-[#6D4AFF] font-extrabold px-1.5 py-0.5 rounded-md flex items-center gap-1">
                   <Shield className="w-3 h-3" />
                   Verified Admin
                 </span>
@@ -1932,7 +2120,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                   handleBackToApp();
                 }
               }}
-              className="text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-1.5 rounded-xl hover:bg-indigo-100 transition-colors cursor-pointer flex items-center gap-1"
+              className="text-xs font-bold text-[#5B35F5] bg-[#F2ECFF] border border-[#E2D9FF] px-2.5 py-1.5 rounded-xl hover:bg-[#E8DFFF] transition-colors cursor-pointer flex items-center gap-1"
               title="Preview Customer App"
             >
               <Eye className="w-3.5 h-3.5" />
@@ -1950,25 +2138,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
           </div>
         </div>
 
-        {/* Weak Password Upgrade Prompt if signed in with a legacy weak password */}
-        {weakPasswordBanner && firebaseActive && (
-          <div className="max-w-xl mx-auto mt-2.5 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-2 text-xs">
-            <span className="font-bold text-amber-900">
-              Upgrade to a strong password (8+ chars, A-Z, 0-9, symbol)
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                setPwdFeedback(null);
-                setPwdModalOpen(true);
-              }}
-              className="px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-black text-[11px] cursor-pointer shrink-0"
-            >
-              Set Strong Password
-            </button>
-          </div>
-        )}
-
         {/* Admin Tabs Navigation Bar */}
         <div className="max-w-xl mx-auto mt-3 flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
           <button
@@ -1976,12 +2145,41 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
             onClick={() => setActiveTab('overview')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
               activeTab === 'overview'
-                ? 'bg-gradient-to-r from-indigo-600 to-teal-600 text-white shadow-xs'
-                : 'bg-indigo-50 text-indigo-800 hover:bg-indigo-100'
+                ? 'bg-gradient-to-r from-[#A855F7] to-[#6366F1] text-white shadow-xs'
+                : 'bg-[#F2ECFF] text-[#5B35F5] hover:bg-[#E8DFFF]'
             }`}
           >
             <LayoutDashboard className="w-3.5 h-3.5" />
-            <span>Today</span>
+            <span>Dashboard</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('usage')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              activeTab === 'usage'
+                ? 'bg-gradient-to-r from-amber-500 to-indigo-600 text-white shadow-xs'
+                : 'bg-amber-50 text-amber-800 border border-amber-200/70 hover:bg-amber-100'
+            }`}
+          >
+            <HardDrive className="w-3.5 h-3.5" />
+            <span>Usage</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setPromoDraft(promotionsConfig);
+              setActiveTab('promotions');
+            }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              activeTab === 'promotions'
+                ? 'bg-gradient-to-r from-pink-500 to-violet-600 text-white shadow-xs'
+                : 'bg-pink-50 text-pink-700 border border-pink-200/70 hover:bg-pink-100'
+            }`}
+          >
+            <PartyPopper className="w-3.5 h-3.5" />
+            <span>Festive & Ads</span>
           </button>
 
           <button
@@ -1989,8 +2187,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
             onClick={() => setActiveTab('pinch')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
               activeTab === 'pinch'
-                ? 'bg-gradient-to-r from-teal-700 to-emerald-600 text-white shadow-xs'
-                : 'bg-teal-50 text-teal-800 hover:bg-teal-100'
+                ? 'bg-gradient-to-r from-[#A855F7] to-[#6366F1] text-white shadow-xs'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
             }`}
           >
             <MessageSquareHeart className="w-3.5 h-3.5" />
@@ -2002,7 +2200,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
             onClick={() => setActiveTab('doctors')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
               activeTab === 'doctors'
-                ? 'bg-teal-700 text-white shadow-xs'
+                ? 'bg-gradient-to-r from-[#A855F7] to-[#6366F1] text-white shadow-xs'
                 : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
             }`}
           >
@@ -2015,7 +2213,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
             onClick={() => setActiveTab('arrivals')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
               activeTab === 'arrivals'
-                ? 'bg-teal-700 text-white shadow-xs'
+                ? 'bg-gradient-to-r from-[#A855F7] to-[#6366F1] text-white shadow-xs'
                 : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
             }`}
           >
@@ -2028,7 +2226,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
             onClick={() => setActiveTab('offers')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
               activeTab === 'offers'
-                ? 'bg-teal-700 text-white shadow-xs'
+                ? 'bg-gradient-to-r from-[#A855F7] to-[#6366F1] text-white shadow-xs'
                 : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
             }`}
           >
@@ -2041,7 +2239,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
             onClick={() => setActiveTab('products')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
               activeTab === 'products'
-                ? 'bg-teal-700 text-white shadow-xs'
+                ? 'bg-gradient-to-r from-[#A855F7] to-[#6366F1] text-white shadow-xs'
                 : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
             }`}
           >
@@ -2054,7 +2252,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
             onClick={() => setActiveTab('pathology')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
               activeTab === 'pathology'
-                ? 'bg-teal-700 text-white shadow-xs'
+                ? 'bg-gradient-to-r from-[#A855F7] to-[#6366F1] text-white shadow-xs'
                 : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
             }`}
           >
@@ -2067,7 +2265,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
             onClick={() => setActiveTab('settings')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
               activeTab === 'settings'
-                ? 'bg-teal-700 text-white shadow-xs'
+                ? 'bg-gradient-to-r from-[#A855F7] to-[#6366F1] text-white shadow-xs'
                 : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
             }`}
           >
@@ -2080,7 +2278,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
             onClick={() => setActiveTab('logs')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
               activeTab === 'logs'
-                ? 'bg-teal-700 text-white shadow-xs'
+                ? 'bg-gradient-to-r from-[#A855F7] to-[#6366F1] text-white shadow-xs'
                 : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
             }`}
           >
@@ -2093,7 +2291,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
             onClick={() => setActiveTab('admins')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
               activeTab === 'admins'
-                ? 'bg-teal-700 text-white shadow-xs'
+                ? 'bg-gradient-to-r from-[#A855F7] to-[#6366F1] text-white shadow-xs'
                 : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
             }`}
           >
@@ -2110,21 +2308,45 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
         {/* ================================================================ */}
         {activeTab === 'overview' && (
           <div className="space-y-4 animate-in fade-in">
+            {/* Compact Hosting & Storage Quick-Jump Strip */}
+            <div className="bg-white/90 backdrop-blur-md rounded-2xl border border-white p-3 shadow-xs flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-indigo-600 text-white flex items-center justify-center shrink-0">
+                  <HardDrive className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-[#1E2252] truncate">
+                    Firebase & Cloudflare Usage
+                  </p>
+                  <p className="text-[10px] font-semibold text-slate-500 tabular-nums truncate">
+                    {hostingUsageStats.totalDataKb} KB / 1 GB · {hostingUsageStats.readsToday} reads · {hostingUsageStats.writesToday} writes
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab('usage')}
+                className="px-3 py-1.5 rounded-xl bg-[#F2ECFF] hover:bg-[#E8DFFF] text-[#5B35F5] text-[11px] font-extrabold shrink-0 cursor-pointer"
+              >
+                Open Usage →
+              </button>
+            </div>
+
             {/* Header & Scope Toggle */}
             <div className="flex items-center justify-between gap-2">
               <div>
-                <h3 className="font-black text-base text-slate-900 flex items-center gap-1.5">
-                  <LayoutDashboard className="w-4 h-4 text-indigo-600" />
+                <h3 className="font-black text-base text-[#1E2252] flex items-center gap-1.5">
+                  <LayoutDashboard className="w-4 h-4 text-[#6D4AFF]" />
                   <span>Daily Operations</span>
                 </h3>
               </div>
-              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+              <div className="flex items-center gap-1 bg-white/80 border border-white p-1 rounded-xl">
                 <button
                   type="button"
                   onClick={() => setDashboardScope('today')}
                   className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer ${
                     dashboardScope === 'today'
-                      ? 'bg-white text-teal-800 shadow-2xs'
+                      ? 'bg-[#6D4AFF] text-white shadow-2xs'
                       : 'text-slate-600'
                   }`}
                 >
@@ -2135,7 +2357,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                   onClick={() => setDashboardScope('all')}
                   className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer ${
                     dashboardScope === 'all'
-                      ? 'bg-white text-teal-800 shadow-2xs'
+                      ? 'bg-[#6D4AFF] text-white shadow-2xs'
                       : 'text-slate-600'
                   }`}
                 >
@@ -2162,7 +2384,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                 <p className="text-xl font-black mt-1">₹{totalMoneyOut.toLocaleString('en-IN')}</p>
               </div>
 
-              <div className="rounded-2xl p-3.5 bg-gradient-to-br from-indigo-600 to-blue-700 text-white shadow-sm">
+              <div className="rounded-2xl p-3.5 bg-gradient-to-br from-[#8B5CF6] to-[#6366F1] text-white shadow-sm">
                 <div className="flex items-center justify-between text-[11px] font-bold text-indigo-100">
                   <span>Net Balance</span>
                   <Wallet className="w-4 h-4" />
@@ -2220,7 +2442,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
             </div>
 
             {/* Orders List */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-3.5 space-y-2.5 shadow-2xs">
+            <div className="bg-white/90 rounded-2xl border border-white p-3.5 space-y-2.5 shadow-xs">
               <div className="flex items-center justify-between">
                 <h4 className="font-black text-xs text-slate-900 flex items-center gap-1.5">
                   <ShoppingBag className="w-3.5 h-3.5 text-blue-600" />
@@ -2229,7 +2451,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                 <button
                   type="button"
                   onClick={syncOperationsFromCloud}
-                  className="text-[10px] font-bold text-teal-700 hover:underline flex items-center gap-1 cursor-pointer"
+                  className="text-[10px] font-bold text-[#6D4AFF] hover:underline flex items-center gap-1 cursor-pointer"
                 >
                   <RefreshCw className="w-3 h-3" />
                   <span>Refresh</span>
@@ -2287,7 +2509,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
             </div>
 
             {/* Money In & Out Ledger */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-3.5 space-y-2.5 shadow-2xs">
+            <div className="bg-white/90 rounded-2xl border border-white p-3.5 space-y-2.5 shadow-xs">
               <h4 className="font-black text-xs text-slate-900 flex items-center gap-1.5">
                 <IndianRupee className="w-3.5 h-3.5 text-emerald-600" />
                 <span>Money In & Out ({scopedTransactions.length})</span>
@@ -2348,7 +2570,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
             </div>
 
             {/* OPD & Lab Bookings */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-3.5 space-y-2.5 shadow-2xs">
+            <div className="bg-white/90 rounded-2xl border border-white p-3.5 space-y-2.5 shadow-xs">
               <h4 className="font-black text-xs text-slate-900 flex items-center gap-1.5">
                 <History className="w-3.5 h-3.5 text-purple-600" />
                 <span>Bookings ({scopedBookings.length})</span>
@@ -2382,7 +2604,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                           });
                           setTxModalOpen(true);
                         }}
-                        className="shrink-0 text-[10px] font-black px-2 py-1 rounded-lg bg-teal-50 text-teal-800 border border-teal-200 cursor-pointer"
+                        className="shrink-0 text-[10px] font-black px-2 py-1 rounded-lg bg-[#F2ECFF] text-[#5B35F5] border border-[#E2D9FF] cursor-pointer"
                       >
                         + Collect ₹
                       </button>
@@ -2391,109 +2613,672 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToApp, onEnterPr
                 </div>
               )}
             </div>
+          </div>
+        )}
 
-            {/* Compact Hosting Usage & Limits Dashboard (Firebase + Cloudflare) */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-3.5 space-y-3 shadow-2xs">
-              <div className="flex items-center justify-between gap-2">
-                <h4 className="font-black text-xs text-slate-900 flex items-center gap-1.5">
-                  <HardDrive className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Hosting, Data & Storage Limits</span>
-                </h4>
-                <span className="text-[10px] font-bold text-slate-500 tabular-nums">
-                  Live Snapshot
+        {/* ================================================================ */}
+        {/* TAB: FIREBASE & CLOUDFLARE USAGE, STORAGE & LIMITS DASHBOARD     */}
+        {/* ================================================================ */}
+        {activeTab === 'usage' && (
+          <div className="space-y-4 animate-in fade-in">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h3 className="font-black text-base text-[#1E2252] flex items-center gap-1.5">
+                  <HardDrive className="w-4 h-4 text-[#6D4AFF]" />
+                  <span>Hosting, Data & Storage Dashboard</span>
+                </h3>
+                <p className="text-xs text-slate-600">
+                  Live Firebase Spark Tier and Cloudflare Free Plan consumption & limits.
+                </p>
+              </div>
+              <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black shrink-0">
+                Healthy
+              </span>
+            </div>
+
+            {/* Firebase Spark Tier Card */}
+            <div className="bg-white/95 rounded-3xl border border-amber-200 p-4 space-y-3 shadow-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-black text-sm text-amber-950 flex items-center gap-1.5">
+                  <Database className="w-4 h-4 text-amber-600" />
+                  <span>Firebase Spark Tier (Firestore)</span>
+                </span>
+                <span className="text-xs font-black text-amber-800 tabular-nums">
+                  {hostingUsageStats.totalDataKb} KB / 1 GB
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {/* Firebase Firestore */}
-                <div className="p-3 rounded-xl border border-amber-200 bg-amber-50/50 space-y-2">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="font-black text-amber-950 flex items-center gap-1">
-                      <Database className="w-3.5 h-3.5 text-amber-600" />
-                      Firebase Spark Tier
-                    </span>
-                    <span className="font-bold text-amber-800 tabular-nums">
-                      {hostingUsageStats.totalDataKb} KB / 1 GB
+              <div className="space-y-2.5">
+                {/* Total Cloud Payload Bar */}
+                <div>
+                  <div className="flex justify-between text-[11px] font-semibold text-slate-600 mb-1 tabular-nums">
+                    <span>Total Synced Database Size</span>
+                    <span>
+                      {hostingUsageStats.totalDataKb} KB ({hostingUsageStats.firestoreStoragePct}%)
                     </span>
                   </div>
-
-                  {/* Doctors Doc vs 1 MiB Single Document Limit */}
-                  <div>
-                    <div className="flex justify-between text-[10px] font-semibold text-slate-600 mb-1 tabular-nums">
-                      <span>Doctors Doc (1 MB cap)</span>
-                      <span>
-                        {hostingUsageStats.doctorsDocKb} KB ({hostingUsageStats.singleDocPct}%)
-                      </span>
-                    </div>
-                    <div className="h-1.5 rounded-full bg-amber-100 overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${
-                          hostingUsageStats.singleDocPct >= 85
-                            ? 'bg-rose-600'
-                            : hostingUsageStats.singleDocPct >= 60
-                            ? 'bg-amber-500'
-                            : 'bg-emerald-600'
-                        }`}
-                        style={{ width: `${Math.max(3, hostingUsageStats.singleDocPct)}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-1.5 pt-1 text-[10px] tabular-nums">
-                    <div className="bg-white px-2 py-1 rounded-lg border border-amber-100">
-                      <span className="text-slate-500 block">Session Reads</span>
-                      <span className="font-black text-slate-900">
-                        {hostingUsageStats.readsToday} / 50k day
-                      </span>
-                    </div>
-                    <div className="bg-white px-2 py-1 rounded-lg border border-amber-100">
-                      <span className="text-slate-500 block">Session Writes</span>
-                      <span className="font-black text-slate-900">
-                        {hostingUsageStats.writesToday} / 20k day
-                      </span>
-                    </div>
+                  <div className="h-2 rounded-full bg-amber-100 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-amber-500"
+                      style={{ width: `${Math.max(4, hostingUsageStats.firestoreStoragePct)}%` }}
+                    />
                   </div>
                 </div>
 
-                {/* Cloudflare Pages / Workers */}
-                <div className="p-3 rounded-xl border border-blue-200 bg-blue-50/50 space-y-2">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="font-black text-blue-950 flex items-center gap-1">
-                      <Cloud className="w-3.5 h-3.5 text-blue-600" />
-                      Cloudflare Free Plan
+                {/* Doctors Single Document Limit */}
+                <div>
+                  <div className="flex justify-between text-[11px] font-semibold text-slate-600 mb-1 tabular-nums">
+                    <span>Doctors Feed Doc (1,024 KB max per doc)</span>
+                    <span>
+                      {hostingUsageStats.doctorsDocKb} KB ({hostingUsageStats.singleDocPct}%)
                     </span>
-                    <span className="font-bold text-emerald-700">Within Limits</span>
                   </div>
-
-                  <div>
-                    <div className="flex justify-between text-[10px] font-semibold text-slate-600 mb-1 tabular-nums">
-                      <span>Device Cache Usage</span>
-                      <span>{hostingUsageStats.localStorageKb} KB / 5,120 KB</span>
-                    </div>
-                    <div className="h-1.5 rounded-full bg-blue-100 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-blue-600"
-                        style={{
-                          width: `${Math.min(
-                            100,
-                            Math.max(3, Math.round((hostingUsageStats.localStorageKb / 5120) * 100))
-                          )}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-1.5 pt-1 text-[10px] tabular-nums">
-                    <div className="bg-white px-2 py-1 rounded-lg border border-blue-100">
-                      <span className="text-slate-500 block">Static Bandwidth</span>
-                      <span className="font-black text-emerald-700">Unlimited</span>
-                    </div>
-                    <div className="bg-white px-2 py-1 rounded-lg border border-blue-100">
-                      <span className="text-slate-500 block">Files / Max Size</span>
-                      <span className="font-black text-slate-900">~25 / 25 MB</span>
-                    </div>
+                  <div className="h-2 rounded-full bg-amber-100 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${
+                        hostingUsageStats.singleDocPct >= 85
+                          ? 'bg-rose-600'
+                          : hostingUsageStats.singleDocPct >= 60
+                          ? 'bg-amber-500'
+                          : 'bg-emerald-600'
+                      }`}
+                      style={{ width: `${Math.max(4, hostingUsageStats.singleDocPct)}%` }}
+                    />
                   </div>
                 </div>
+
+                {/* Festive & Footer Media Doc */}
+                <div>
+                  <div className="flex justify-between text-[11px] font-semibold text-slate-600 mb-1 tabular-nums">
+                    <span>Festive & Footer Media Doc (1,024 KB max)</span>
+                    <span>{hostingUsageStats.promosDocKb} KB</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-violet-100 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-[#6D4AFF]"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.max(3, Math.round((hostingUsageStats.promosDocKb / 1024) * 100))
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 pt-1 text-[11px] tabular-nums">
+                <div className="bg-amber-50/70 px-2.5 py-2 rounded-xl border border-amber-100">
+                  <span className="text-slate-500 block text-[10px]">Session Reads</span>
+                  <span className="font-black text-slate-900">
+                    {hostingUsageStats.readsToday} / 50k day
+                  </span>
+                </div>
+                <div className="bg-amber-50/70 px-2.5 py-2 rounded-xl border border-amber-100">
+                  <span className="text-slate-500 block text-[10px]">Session Writes</span>
+                  <span className="font-black text-slate-900">
+                    {hostingUsageStats.writesToday} / 20k day
+                  </span>
+                </div>
+                <div className="bg-amber-50/70 px-2.5 py-2 rounded-xl border border-amber-100">
+                  <span className="text-slate-500 block text-[10px]">Docs Stored</span>
+                  <span className="font-black text-slate-900">
+                    {hostingUsageStats.docCount} docs
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Cloudflare Pages / Static Hosting Card */}
+            <div className="bg-white/95 rounded-3xl border border-blue-200 p-4 space-y-3 shadow-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-black text-sm text-blue-950 flex items-center gap-1.5">
+                  <Cloud className="w-4 h-4 text-blue-600" />
+                  <span>Cloudflare Pages Free Plan</span>
+                </span>
+                <span className="text-[11px] font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+                  Within Limits
+                </span>
+              </div>
+
+              <div>
+                <div className="flex justify-between text-[11px] font-semibold text-slate-600 mb-1 tabular-nums">
+                  <span>Device Offline Cache (localStorage)</span>
+                  <span>{hostingUsageStats.localStorageKb} KB / 5,120 KB</span>
+                </div>
+                <div className="h-2 rounded-full bg-blue-100 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-blue-600"
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        Math.max(3, Math.round((hostingUsageStats.localStorageKb / 5120) * 100))
+                      )}%`,
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-1 text-[11px] tabular-nums">
+                <div className="bg-blue-50/70 px-2.5 py-2 rounded-xl border border-blue-100">
+                  <span className="text-slate-500 block text-[10px]">Static Bandwidth</span>
+                  <span className="font-black text-emerald-700">Unlimited</span>
+                </div>
+                <div className="bg-blue-50/70 px-2.5 py-2 rounded-xl border border-blue-100">
+                  <span className="text-slate-500 block text-[10px]">App Bundle / Limit</span>
+                  <span className="font-black text-slate-900">~1.2 MB / 25 MB</span>
+                </div>
+                <div className="bg-blue-50/70 px-2.5 py-2 rounded-xl border border-blue-100">
+                  <span className="text-slate-500 block text-[10px]">Store Catalog Payload</span>
+                  <span className="font-black text-slate-900">{hostingUsageStats.productsDocKb} KB</span>
+                </div>
+                <div className="bg-blue-50/70 px-2.5 py-2 rounded-xl border border-blue-100">
+                  <span className="text-slate-500 block text-[10px]">Monthly Deploys</span>
+                  <span className="font-black text-slate-900">Free (500/mo)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ================================================================ */}
+        {/* TAB: FESTIVE DECORATIONS, RUNNING BANNER & FOOTER MEDIA/ADS      */}
+        {/* ================================================================ */}
+        {activeTab === 'promotions' && (
+          <div className="space-y-4 animate-in fade-in">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h3 className="font-black text-base text-[#1E2252] flex items-center gap-1.5">
+                  <PartyPopper className="w-4 h-4 text-[#6D4AFF]" />
+                  <span>Festive Decorations, Banner & Footer Ads</span>
+                </h3>
+                <p className="text-xs text-slate-600">
+                  Configure festive themes, running marquee banner, and footer GIFs/offers with live preview before publishing.
+                </p>
+              </div>
+            </div>
+
+            {/* 1. RUNNING BANNER CONTROLS */}
+            <div className="bg-white/95 rounded-3xl border border-white p-4 space-y-3 shadow-xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Megaphone className="w-4 h-4 text-[#6D4AFF]" />
+                  <h4 className="font-black text-sm text-[#1E2252]">1. Running Marquee Banner</h4>
+                </div>
+                <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={promoDraft.runningBanner.enabled}
+                    onChange={(e) =>
+                      setPromoDraft((prev) => ({
+                        ...prev,
+                        runningBanner: { ...prev.runningBanner, enabled: e.target.checked },
+                      }))
+                    }
+                  />
+                  <span>{promoDraft.runningBanner.enabled ? 'On' : 'Off'}</span>
+                </label>
+              </div>
+
+              <input
+                type="text"
+                placeholder="e.g. Flat 20% OFF on Full Body Checkup • Free Sugar Test every Sunday!"
+                value={promoDraft.runningBanner.text}
+                onChange={(e) =>
+                  setPromoDraft((prev) => ({
+                    ...prev,
+                    runningBanner: { ...prev.runningBanner, text: e.target.value },
+                  }))
+                }
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-[#6D4AFF]"
+              />
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">Banner Style</label>
+                  <select
+                    value={promoDraft.runningBanner.bgPreset}
+                    onChange={(e) =>
+                      setPromoDraft((prev) => ({
+                        ...prev,
+                        runningBanner: {
+                          ...prev.runningBanner,
+                          bgPreset: e.target.value as BannerColorPreset,
+                        },
+                      }))
+                    }
+                    className="w-full px-2.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold bg-white"
+                  >
+                    <option value="violet">Violet Aura</option>
+                    <option value="festive">Festive Gradient</option>
+                    <option value="amber">Amber Orange</option>
+                    <option value="teal">Teal Emerald</option>
+                    <option value="rose">Rose Pink</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">Tap Opens</label>
+                  <select
+                    value={promoDraft.runningBanner.linkTab}
+                    onChange={(e) =>
+                      setPromoDraft((prev) => ({
+                        ...prev,
+                        runningBanner: {
+                          ...prev.runningBanner,
+                          linkTab: e.target.value as PromoLinkTab,
+                        },
+                      }))
+                    }
+                    className="w-full px-2.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold bg-white"
+                  >
+                    <option value="offers">Special Offers</option>
+                    <option value="store">Pharmacy Store</option>
+                    <option value="doctors">Doctors OPD</option>
+                    <option value="appointments">Bookings</option>
+                    <option value="none">No Link (Display Only)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. FESTIVE DECORATION & LIGHTWEIGHT PRESETS */}
+            <div className="bg-white/95 rounded-3xl border border-white p-4 space-y-3 shadow-xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-amber-500" />
+                  <h4 className="font-black text-sm text-[#1E2252]">2. Festive Decorations</h4>
+                </div>
+                <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={promoDraft.festiveDecoration.enabled}
+                    onChange={(e) =>
+                      setPromoDraft((prev) => ({
+                        ...prev,
+                        festiveDecoration: {
+                          ...prev.festiveDecoration,
+                          enabled: e.target.checked,
+                        },
+                      }))
+                    }
+                  />
+                  <span>{promoDraft.festiveDecoration.enabled ? 'On' : 'Off'}</span>
+                </label>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    Choose Festival
+                  </label>
+                  <select
+                    value={promoDraft.festiveDecoration.festival}
+                    onChange={(e) => {
+                      const nextFest = e.target.value as FestiveThemeId;
+                      const firstAsset = getAssetsForFestival(nextFest)[0]?.id || '';
+                      setPromoDraft((prev) => ({
+                        ...prev,
+                        festiveDecoration: {
+                          ...prev.festiveDecoration,
+                          festival: nextFest,
+                          enabled: nextFest !== 'none',
+                          presetAssetId: firstAsset,
+                        },
+                      }));
+                    }}
+                    className="w-full px-2.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold bg-white"
+                  >
+                    {FESTIVALS_META.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    Decoration Intensity
+                  </label>
+                  <select
+                    value={promoDraft.festiveDecoration.intensity}
+                    onChange={(e) =>
+                      setPromoDraft((prev) => ({
+                        ...prev,
+                        festiveDecoration: {
+                          ...prev.festiveDecoration,
+                          intensity: e.target.value as 'subtle' | 'festive',
+                        },
+                      }))
+                    }
+                    className="w-full px-2.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold bg-white"
+                  >
+                    <option value="subtle">Subtle (Clean)</option>
+                    <option value="festive">Festive (Lively)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Lightweight Animated Pics / Presets for Chosen Festival */}
+              {promoDraft.festiveDecoration.festival !== 'none' && (
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-bold text-slate-600">
+                    Lightweight Animated Pics for{' '}
+                    {FESTIVALS_META.find((f) => f.id === promoDraft.festiveDecoration.festival)?.label}:
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {getAssetsForFestival(promoDraft.festiveDecoration.festival).map((asset) => {
+                      const isPicked =
+                        promoDraft.festiveDecoration.presetAssetId === asset.id;
+                      return (
+                        <div
+                          key={asset.id}
+                          className={`p-2.5 rounded-2xl border text-center flex flex-col items-center gap-1.5 transition-all ${
+                            isPicked
+                              ? 'border-[#6D4AFF] bg-[#F2ECFF] ring-2 ring-[#6D4AFF]/30'
+                              : 'border-slate-200 bg-white hover:bg-slate-50'
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPromoDraft((prev) => ({
+                                ...prev,
+                                festiveDecoration: {
+                                  ...prev.festiveDecoration,
+                                  enabled: true,
+                                  presetAssetId: asset.id,
+                                },
+                              }))
+                            }
+                            className="w-full flex flex-col items-center gap-1.5 cursor-pointer"
+                          >
+                            <FestiveArtwork assetId={asset.id} festival={asset.festival} size="sm" />
+                            <span className="text-[10px] font-extrabold text-[#1E2252] leading-tight">
+                              {asset.label}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPromoDraft((prev) => ({
+                                ...prev,
+                                footerShowcase: {
+                                  ...prev.footerShowcase,
+                                  enabled: true,
+                                  mediaUrl: `preset:${asset.id}`,
+                                  title: prev.footerShowcase.title || asset.badgeText,
+                                },
+                              }));
+                              showToast(`Added "${asset.label}" to Footer Showcase.`);
+                            }}
+                            className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-white border border-slate-200 text-[#5B35F5] hover:bg-[#F2ECFF] cursor-pointer"
+                          >
+                            Use in Footer
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 3. FOOTER FESTIVE / OFFER PICS & GIFS */}
+            <div className="bg-white/95 rounded-3xl border border-white p-4 space-y-3 shadow-xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ImageIcon className="w-4 h-4 text-pink-600" />
+                  <h4 className="font-black text-sm text-[#1E2252]">3. Footer Pic / GIF & Offer Ad</h4>
+                </div>
+                <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={promoDraft.footerShowcase.enabled}
+                    onChange={(e) =>
+                      setPromoDraft((prev) => ({
+                        ...prev,
+                        footerShowcase: { ...prev.footerShowcase, enabled: e.target.checked },
+                      }))
+                    }
+                  />
+                  <span>{promoDraft.footerShowcase.enabled ? 'On' : 'Off'}</span>
+                </label>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                When turned off or no active offer/festive media is set, nothing is shown at the bottom (no blank box).
+              </p>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">Footer Mode</label>
+                  <select
+                    value={promoDraft.footerShowcase.mode}
+                    onChange={(e) =>
+                      setPromoDraft((prev) => ({
+                        ...prev,
+                        footerShowcase: {
+                          ...prev.footerShowcase,
+                          mode: e.target.value as 'festive' | 'offer' | 'both',
+                        },
+                      }))
+                    }
+                    className="w-full px-2.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold bg-white"
+                  >
+                    <option value="festive">Festive Greeting / GIF</option>
+                    <option value="offer">Advertise Special Offer</option>
+                    <option value="both">Both Festive & Offer</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">Button Opens</label>
+                  <select
+                    value={promoDraft.footerShowcase.ctaTab}
+                    onChange={(e) =>
+                      setPromoDraft((prev) => ({
+                        ...prev,
+                        footerShowcase: {
+                          ...prev.footerShowcase,
+                          ctaTab: e.target.value as PromoLinkTab,
+                        },
+                      }))
+                    }
+                    className="w-full px-2.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold bg-white"
+                  >
+                    <option value="offers">Offers Page</option>
+                    <option value="store">Medicine Store</option>
+                    <option value="doctors">Doctors OPD</option>
+                    <option value="appointments">Bookings</option>
+                    <option value="none">No Button</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  placeholder="Headline (e.g. Happy Diwali or Flat 25% OFF)"
+                  value={promoDraft.footerShowcase.title}
+                  onChange={(e) =>
+                    setPromoDraft((prev) => ({
+                      ...prev,
+                      footerShowcase: { ...prev.footerShowcase, title: e.target.value },
+                    }))
+                  }
+                  className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-[#6D4AFF]"
+                />
+                <input
+                  type="text"
+                  placeholder="Button Label (e.g. View Offer)"
+                  value={promoDraft.footerShowcase.ctaLabel}
+                  onChange={(e) =>
+                    setPromoDraft((prev) => ({
+                      ...prev,
+                      footerShowcase: { ...prev.footerShowcase, ctaLabel: e.target.value },
+                    }))
+                  }
+                  className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-[#6D4AFF]"
+                />
+              </div>
+
+              <input
+                type="text"
+                placeholder="Subtitle / details (optional)"
+                value={promoDraft.footerShowcase.subtitle}
+                onChange={(e) =>
+                  setPromoDraft((prev) => ({
+                    ...prev,
+                    footerShowcase: { ...prev.footerShowcase, subtitle: e.target.value },
+                  }))
+                }
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-[#6D4AFF]"
+              />
+
+              {/* Upload Picture / GIF OR Paste URL */}
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="px-3 py-2 rounded-xl bg-[#F2ECFF] hover:bg-[#E8DFFF] text-[#5B35F5] text-xs font-extrabold cursor-pointer flex items-center gap-1.5">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{promoMediaLoading ? 'Loading...' : 'Upload Pic / GIF'}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handlePromoMediaUpload}
+                    className="hidden"
+                  />
+                </label>
+
+                <input
+                  type="text"
+                  placeholder="Or paste GIF / Image URL or preset:..."
+                  value={promoDraft.footerShowcase.mediaUrl}
+                  onChange={(e) =>
+                    setPromoDraft((prev) => ({
+                      ...prev,
+                      footerShowcase: { ...prev.footerShowcase, mediaUrl: e.target.value },
+                    }))
+                  }
+                  className="flex-1 min-w-[180px] px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:outline-[#6D4AFF]"
+                />
+
+                {promoDraft.footerShowcase.mediaUrl && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPromoDraft((prev) => ({
+                        ...prev,
+                        footerShowcase: { ...prev.footerShowcase, mediaUrl: '' },
+                      }))
+                    }
+                    className="px-2.5 py-2 rounded-xl bg-rose-50 text-rose-600 text-xs font-bold cursor-pointer"
+                  >
+                    Clear Media
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* 4. LIVE PREVIEW BEFORE UPLOADING / PUBLISHING */}
+            <div className="bg-white/95 rounded-3xl border-2 border-[#C6C5FF] p-4 space-y-3 shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-[#1E2252] flex items-center gap-1.5">
+                  <Eye className="w-4 h-4 text-[#6D4AFF]" />
+                  <span>Live Preview (Before Publishing)</span>
+                </span>
+                <span className="text-[10px] font-bold text-[#6D4AFF] bg-[#F2ECFF] px-2 py-0.5 rounded-full">
+                  Draft
+                </span>
+              </div>
+
+              <div className="rounded-2xl overflow-hidden border border-slate-200 aura-page-bg p-3 space-y-3">
+                {/* Preview Running Banner */}
+                {promoDraft.runningBanner.enabled && promoDraft.runningBanner.text.trim() ? (
+                  <div className="rounded-xl overflow-hidden">
+                    <RunningBanner config={promoDraft.runningBanner} />
+                  </div>
+                ) : (
+                  <p className="text-[10px] text-slate-500 text-center italic">
+                    Running banner is currently off (nothing rendered).
+                  </p>
+                )}
+
+                {/* Preview Festive Decoration */}
+                {promoDraft.festiveDecoration.enabled &&
+                  promoDraft.festiveDecoration.festival !== 'none' && (
+                    <div className="flex items-center justify-between px-3 py-2 rounded-2xl bg-white/80 border border-white">
+                      <FestiveArtwork
+                        assetId={promoDraft.festiveDecoration.presetAssetId}
+                        festival={promoDraft.festiveDecoration.festival}
+                        size="sm"
+                      />
+                      <span className="text-xs font-black text-[#1E2252]">
+                        {
+                          FESTIVALS_META.find(
+                            (f) => f.id === promoDraft.festiveDecoration.festival
+                          )?.label
+                        }{' '}
+                        Theme Active
+                      </span>
+                      <FestiveArtwork
+                        assetId={promoDraft.festiveDecoration.presetAssetId}
+                        festival={promoDraft.festiveDecoration.festival}
+                        size="sm"
+                      />
+                    </div>
+                  )}
+
+                {/* Preview Footer Showcase */}
+                {(() => {
+                  const previewHasFooter =
+                    promoDraft.footerShowcase.enabled &&
+                    (Boolean(promoDraft.footerShowcase.mediaUrl.trim()) ||
+                      Boolean(promoDraft.footerShowcase.title.trim()) ||
+                      Boolean(promoDraft.footerShowcase.subtitle.trim()) ||
+                      (promoDraft.footerShowcase.mode !== 'festive' && specialOffers.length > 0) ||
+                      (promoDraft.festiveDecoration.enabled &&
+                        promoDraft.festiveDecoration.festival !== 'none'));
+                  if (!previewHasFooter) {
+                    return (
+                      <p className="text-[10px] text-slate-500 text-center italic">
+                        Footer showcase is inactive or empty (zero blank box in app).
+                      </p>
+                    );
+                  }
+                  return (
+                    <div className="[&>footer]:!px-0 [&>footer]:!pb-0 [&>footer]:!pt-0">
+                      <FooterShowcase
+                        config={promoDraft.footerShowcase}
+                        festiveConfig={promoDraft.festiveDecoration}
+                        activeOffers={specialOffers}
+                      />
+                    </div>
+                  );
+                })()}
+              </div>
+
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => handlePublishPromotions(DEFAULT_PROMOTIONS_CONFIG)}
+                  disabled={isPublishingPromo}
+                  className="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold cursor-pointer"
+                >
+                  Turn Off All
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePublishPromotions(promoDraft)}
+                  disabled={isPublishingPromo}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#A855F7] to-[#6366F1] hover:opacity-95 disabled:opacity-60 text-white text-xs font-black shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  {isPublishingPromo ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                  <span>{isPublishingPromo ? 'Publishing...' : 'Publish Live to App'}</span>
+                </button>
               </div>
             </div>
           </div>

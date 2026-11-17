@@ -17,7 +17,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
 
   return (
     <nav
-      className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md sm:max-w-xl h-16 backdrop-blur-md border-t flex items-center justify-between z-40 px-2 sm:px-3 shadow-lg transition-colors bg-white/95 border-[#4987A4]/25"
+      className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md sm:max-w-xl h-16 backdrop-blur-xl border-t flex items-center justify-between z-40 px-2 sm:px-3 shadow-lg transition-colors bg-white/88 border-white/95"
     >
       {/* Left Pair: Doctors & Store */}
       <div className="flex-1 flex items-center justify-around">
@@ -27,8 +27,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           onClick={() => onTabChange('doctors')}
           className={`flex flex-col items-center justify-center py-1 transition-all cursor-pointer ${
             activeTab === 'doctors'
-              ? 'text-purple-600 font-black scale-105'
-              : 'text-slate-400 hover:text-purple-500'
+              ? 'text-[#6D4AFF] font-black scale-105'
+              : 'text-slate-400 hover:text-[#6D4AFF]'
           }`}
         >
           <Users className="w-5 h-5 mb-0.5" />
@@ -41,8 +41,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           onClick={() => onTabChange('store')}
           className={`flex flex-col items-center justify-center py-1 transition-all cursor-pointer ${
             activeTab === 'store'
-              ? 'text-blue-600 font-black scale-105'
-              : 'text-slate-400 hover:text-blue-500'
+              ? 'text-[#6366F1] font-black scale-105'
+              : 'text-slate-400 hover:text-[#6366F1]'
           }`}
         >
           <Pill className="w-5 h-5 mb-0.5" />
@@ -56,13 +56,13 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           type="button"
           onClick={() => onTabChange('home')}
           aria-label="Home"
-          className="w-12 h-12 -mt-5 rounded-full flex items-center justify-center shadow-lg transition-all active:scale-95 border-3 cursor-pointer border-white bg-gradient-to-tr from-teal-700 via-teal-600 to-emerald-600 text-white shadow-teal-700/30"
+          className="w-12 h-12 -mt-5 rounded-full flex items-center justify-center shadow-lg transition-all active:scale-95 border-3 cursor-pointer border-white bg-gradient-to-tr from-[#A855F7] via-[#8B5CF6] to-[#6366F1] text-white shadow-indigo-500/35"
         >
           <Home className="w-5 h-5" />
         </button>
         <span
           className={`text-[10px] mt-0.5 font-black ${
-            activeTab === 'home' ? 'text-teal-700' : 'text-slate-400'
+            activeTab === 'home' ? 'text-[#6D4AFF]' : 'text-slate-400'
           }`}
         >
           {t.home || 'Home'}

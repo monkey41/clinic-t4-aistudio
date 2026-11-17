@@ -155,4 +155,43 @@ export interface PinchUpdate {
   updatedAt?: string;
 }
 
+export type FestiveThemeId =
+  | 'none'
+  | 'diwali'
+  | 'holi'
+  | 'dussehra'
+  | 'eid'
+  | 'christmas'
+  | 'newyear'
+  | 'independence'
+  | 'healthday';
+
+export type BannerColorPreset = 'violet' | 'amber' | 'teal' | 'rose' | 'festive';
+
+export type PromoLinkTab = 'none' | 'offers' | 'store' | 'doctors' | 'appointments';
+
+export interface ClinicPromotionsConfig {
+  runningBanner: {
+    enabled: boolean;
+    text: string;
+    bgPreset: BannerColorPreset;
+    linkTab: PromoLinkTab;
+  };
+  festiveDecoration: {
+    enabled: boolean;
+    festival: FestiveThemeId;
+    presetAssetId: string;
+    intensity: 'subtle' | 'festive';
+  };
+  footerShowcase: {
+    enabled: boolean;
+    mode: 'festive' | 'offer' | 'both';
+    title: string;
+    subtitle: string;
+    mediaUrl: string;
+    ctaLabel: string;
+    ctaTab: PromoLinkTab;
+  };
+  updatedAt?: string;
+}
 

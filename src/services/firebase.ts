@@ -34,6 +34,7 @@ import {
   CashTransaction,
   SpecialOffer,
   PinchUpdate,
+  ClinicPromotionsConfig,
 } from '../types';
 
 // Lightweight session operation counter for the Admin Usage Dashboard
@@ -781,6 +782,7 @@ export async function fetchProductsFromFirestore(): Promise<Product[] | null> {
       'clinic_ledger_feed',
       'clinic_offers_feed',
       'clinic_pinch_feed',
+      'clinic_promotions_feed',
     ]);
     recordFirestoreRead(snapshot.size || 1);
     snapshot.forEach((d) => {
@@ -1480,5 +1482,70 @@ export function subscribeToPinchUpdates(callback: (updates: PinchUpdate[]) => vo
     return () => {};
   }
 }
+
+/**
+ * =========================================================================
+ * FESTIVE DECORATIONS, RUNNING BANNER & FOOTER MEDIA PROMOTIONS SYNC
+ * =========================================================================
+ */
+export async function syncPromotionsToFirestore(
+  config: ClinicPromotionsConfig
+): Promise<boolean> {
+  const db = getFirebaseDb();
+  if (!db) return false;
+
+  try {
+    const feedRef = doc(db, 'products', 'clinic_promotions_feed');
+    await setDoc(feedRef, {
+      config,
+      updatedAt: new Date().toISOString(),
+    });
+    recordFirestoreWrite(1);
+    return true;
+  } catch (err) {
+    console.warn('Could not sync promotions config to Firestore:', err);
+    return false;
+  }
+}
+
+export async function fetchPromotionsFromFirestore(): Promise<ClinicPromotionsConfig | null> {
+  const db = getFirebaseDb();
+  if (!db) return null;
+
+  try {
+    const snap = await getDoc(doc(db, 'products', 'clinic_promotions_feed'));
+    recordFirestoreRead(1);
+    if (snap.exists() && snap.data()?.config) {
+      return snap.data().config as ClinicPromotionsConfig;
+    }
+  } catch (err) {
+    console.warn('Could not fetch promotions config:', err);
+  }
+  return null;
+}
+
+export function subscribeToPromotions(
+  callback: (config: ClinicPromotionsConfig) => void
+): () => void {
+  const db = getFirebaseDb();
+  if (!db) return () => {};
+
+  try {
+    const feedRef = doc(db, 'products', 'clinic_promotions_feed');
+    return onSnapshot(
+      feedRef,
+      (snap) => {
+        recordFirestoreRead(1);
+        if (snap.exists() && snap.data()?.config) {
+          callback(snap.data().config as ClinicPromotionsConfig);
+        }
+      },
+      () => {}
+    );
+  } catch {
+    return () => {};
+  }
+}
+
 
 

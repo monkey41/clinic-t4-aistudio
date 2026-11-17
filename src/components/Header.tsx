@@ -216,9 +216,8 @@ export const Header: React.FC<HeaderProps> = ({
                 >
                   {brandName}
                 </span>
-                <span className={`text-[10px] font-medium flex items-center gap-1 ${theme.accentText}`}>
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Open Now • Pharmacy & Clinic
+                <span className={`text-[10px] font-medium block ${theme.accentText}`}>
+                  Open Now · Pharmacy & Clinic
                 </span>
               </div>
             </button>
@@ -233,12 +232,12 @@ export const Header: React.FC<HeaderProps> = ({
                 type="button"
                 onClick={handleOpenNotifications}
                 aria-label="Notifications"
-                className="relative p-2 rounded-xl shadow-xs transition-all active:scale-95 cursor-pointer border bg-slate-50 text-slate-700 hover:text-teal-700 border-slate-200"
+                className="relative p-2 rounded-xl shadow-xs transition-all active:scale-95 cursor-pointer border bg-white/90 text-[#3B3F7D] hover:text-[#6D4AFF] border-[#E5E0FA]"
                 title="Notifications"
               >
                 <Bell className="w-4 h-4" />
                 {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[9px] font-extrabold flex items-center justify-center shadow-xs animate-pulse bg-rose-500 text-white">
+                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[9px] font-extrabold flex items-center justify-center shadow-xs bg-[#EC4899] text-white">
                     {unreadCount}
                   </span>
                 )}
@@ -397,7 +396,7 @@ export const Header: React.FC<HeaderProps> = ({
             <a
               href={`tel:${CLINIC_CONFIG.phone}`}
               aria-label="Call Clinic"
-              className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl transition-colors border text-teal-700 bg-teal-50 hover:bg-teal-100 border-teal-200/70"
+              className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl transition-colors border text-[#5B3DF5] bg-[#EDE8FC] hover:bg-[#E2DAFB] border-[#D8CCF9]"
             >
               <Phone className="w-3.5 h-3.5" />
               <span>Call</span>
@@ -509,25 +508,25 @@ export const Header: React.FC<HeaderProps> = ({
                     setDrawerOpen(false);
                     setSettingsOpen(true);
                   }}
-                  className="w-full text-left px-3 py-2.5 rounded-xl font-semibold text-xs flex items-center gap-2.5 transition-colors cursor-pointer hover:bg-slate-100 text-slate-800"
+                  className="w-full text-left px-3 py-2.5 rounded-xl font-semibold text-xs flex items-center gap-2.5 transition-colors cursor-pointer hover:bg-[#F4F1FF] text-[#1E2252]"
                 >
-                  <Settings className="w-4 h-4 text-teal-700" />
+                  <Settings className="w-4 h-4 text-[#6D4AFF]" />
                   <span>Settings (Notifications & Location)</span>
                 </button>
               </div>
 
               {/* Install PWA App to Home Screen (Hidden once installed) */}
               {!isAppInstalled && (
-                <div className="mt-4 p-3 rounded-2xl bg-teal-50 border border-teal-200/80 space-y-2">
+                <div className="mt-4 p-3 rounded-2xl bg-[#F4F1FF] border border-[#D8CCF9] space-y-2">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-white p-0.5 border border-teal-200 shrink-0 overflow-hidden flex items-center justify-center shadow-2xs">
+                    <div className="w-8 h-8 rounded-xl bg-white p-0.5 border border-[#D8CCF9] shrink-0 overflow-hidden flex items-center justify-center shadow-2xs">
                       <img src="/logo.png" alt="Life Care Logo" className="w-full h-full object-contain" />
                     </div>
                     <div className="min-w-0">
-                      <span className="font-extrabold text-xs text-slate-900 block leading-tight">
+                      <span className="font-extrabold text-xs text-[#1E2252] block leading-tight">
                         Install Life Care App
                       </span>
-                      <span className="text-[10px] text-teal-700 font-medium block">
+                      <span className="text-[10px] text-[#6D4AFF] font-medium block">
                         Add to your home screen
                       </span>
                     </div>
@@ -536,7 +535,7 @@ export const Header: React.FC<HeaderProps> = ({
                   <button
                     type="button"
                     onClick={handleInstallPwa}
-                    className="w-full py-2 px-3 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-98 cursor-pointer"
+                    className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-[#A855F7] to-[#6366F1] hover:brightness-105 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-98 cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>Install App</span>

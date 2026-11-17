@@ -11,6 +11,7 @@ import {
   StoreOrder,
   CashTransaction,
   PinchUpdate,
+  ClinicPromotionsConfig,
 } from '../types';
 import kneeBraceImg from '../assets/images/ortho_knee_brace_1790317702669.jpg';
 import lumbarBeltImg from '../assets/images/lumbar_belt_1790317715183.jpg';
@@ -115,33 +116,33 @@ export function notifyClinicDataChanged(): void {
   }
 }
 
-// Clean, cohesive medical theme palette (slate-50 background, crisp white cards)
+// Luminous pastel lavender-sky-blush theme palette matching brand design
 export function getThemePalette(_isDark?: boolean, _darkColor?: string) {
   return {
     backdropClass: '',
-    outerBg: 'bg-slate-50 text-slate-800',
-    pageBg: 'bg-slate-50 text-slate-800',
-    shellBg: 'bg-white border-x border-slate-200 text-slate-800',
-    headerBg: 'bg-white/95 border-b border-slate-200 text-slate-800',
-    cardBg: 'bg-white border-slate-200 text-slate-800',
-    card: 'bg-white border-slate-200 text-slate-800',
-    softCardBg: 'bg-slate-50 border-slate-200 text-slate-900',
-    cardAlt: 'bg-white border-slate-200 text-slate-900',
-    subtleBg: 'bg-slate-50 border-slate-200 text-slate-900',
-    headingText: 'text-slate-900',
-    heading: 'text-slate-900',
+    outerBg: 'aura-page-bg text-[#1E2252]',
+    pageBg: 'aura-page-bg text-[#1E2252]',
+    shellBg: 'aura-shell border-x border-white/75 text-[#1E2252]',
+    headerBg: 'bg-white/75 border-b border-white/85 text-[#1E2252]',
+    cardBg: 'bg-white/82 backdrop-blur-md border-white/90 text-[#1E2252]',
+    card: 'bg-white/82 backdrop-blur-md border-white/90 text-[#1E2252]',
+    softCardBg: 'bg-[#EDE8FC]/85 border-[#D8CCF9] text-[#1E2252]',
+    cardAlt: 'bg-white/90 border-[#E5E0FA] text-[#1E2252]',
+    subtleBg: 'bg-[#F4F1FF]/80 border-[#E2DBFA] text-[#1E2252]',
+    headingText: 'text-[#1E2252]',
+    heading: 'text-[#1E2252]',
     subText: 'text-slate-600',
     subtext: 'text-slate-600',
     mutedText: 'text-slate-400',
-    accentText: 'text-teal-700',
-    primaryBtn: 'bg-teal-700 hover:bg-teal-800 text-white',
-    secondaryBtn: 'bg-rose-600 hover:bg-rose-700 text-white',
-    badge: 'bg-teal-50 text-teal-800 border-teal-200',
-    border: 'border-slate-200',
-    divider: 'border-slate-200',
-    input: 'bg-white border-slate-200 text-slate-900 placeholder:text-slate-400',
-    navBg: 'bg-white/95 border-t border-slate-200',
-    footerBg: 'border-t border-slate-200 bg-white text-slate-600',
+    accentText: 'text-[#6D4AFF]',
+    primaryBtn: 'bg-gradient-to-r from-[#A855F7] via-[#8B5CF6] to-[#6366F1] hover:brightness-105 text-white',
+    secondaryBtn: 'bg-gradient-to-r from-[#EC4899] to-[#8B5CF6] hover:brightness-105 text-white',
+    badge: 'bg-[#EDE8FC] text-[#5B3DF5] border-[#D8CCF9]',
+    border: 'border-[#E6E1FB]',
+    divider: 'border-[#EAE6FC]',
+    input: 'bg-white/90 border-[#DFD8FA] text-[#1E2252] placeholder:text-slate-400',
+    navBg: 'bg-white/88 border-t border-white/90',
+    footerBg: 'border-t border-white/80 bg-white/70 text-slate-600',
   };
 }
 
@@ -1234,6 +1235,62 @@ export function calculateDistanceKm(
   return Math.round(R * c * 10) / 10;
 }
 
+export const DEFAULT_PROMOTIONS_CONFIG: ClinicPromotionsConfig = {
+  runningBanner: {
+    enabled: false,
+    text: '',
+    bgPreset: 'violet',
+    linkTab: 'offers',
+  },
+  festiveDecoration: {
+    enabled: false,
+    festival: 'none',
+    presetAssetId: '',
+    intensity: 'subtle',
+  },
+  footerShowcase: {
+    enabled: false,
+    mode: 'festive',
+    title: '',
+    subtitle: '',
+    mediaUrl: '',
+    ctaLabel: 'View Offer',
+    ctaTab: 'offers',
+  },
+};
+
+export function getPromotionsConfig(): ClinicPromotionsConfig {
+  try {
+    const saved = localStorage.getItem('lifecare_promotions_config');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed === 'object') {
+        return {
+          runningBanner: { ...DEFAULT_PROMOTIONS_CONFIG.runningBanner, ...parsed.runningBanner },
+          festiveDecoration: {
+            ...DEFAULT_PROMOTIONS_CONFIG.festiveDecoration,
+            ...parsed.festiveDecoration,
+          },
+          footerShowcase: { ...DEFAULT_PROMOTIONS_CONFIG.footerShowcase, ...parsed.footerShowcase },
+          updatedAt: parsed.updatedAt,
+        };
+      }
+    }
+  } catch (e) {
+    console.error(e);
+  }
+  return DEFAULT_PROMOTIONS_CONFIG;
+}
+
+export function savePromotionsConfig(config: ClinicPromotionsConfig): void {
+  try {
+    localStorage.setItem('lifecare_promotions_config', JSON.stringify(config));
+    notifyClinicDataChanged();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
 // Reset all store data back to factory defaults
 export function resetAllToFactoryDefaults(): void {
   try {
@@ -1244,6 +1301,7 @@ export function resetAllToFactoryDefaults(): void {
     localStorage.removeItem('lifecare_unannounced_arrivals');
     localStorage.removeItem('lifecare_clinic_config');
     localStorage.removeItem('lifecare_compact_booking_history');
+    localStorage.removeItem('lifecare_promotions_config');
     localStorage.removeItem('careplus_theme');
     localStorage.removeItem('careplus_dark_color');
     notifyClinicDataChanged();
@@ -1251,5 +1309,6 @@ export function resetAllToFactoryDefaults(): void {
     console.error(e);
   }
 }
+
 
 
